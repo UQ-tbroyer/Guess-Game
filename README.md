@@ -318,7 +318,7 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 **Nom :** Simon-Olivier Bolduc
 
 **Classes responsables :**
-`GGServer` · `ClientHandler` · `Room` · `PermissionManager`
+`P2PMManager` · `PeerListener` · `GameEngine` · `enum de client`
 
 **Travail effectué :**
 ```
@@ -335,7 +335,7 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 **Nom :** David Carrier
 
 **Classes responsables :**
-`Message` · `MessageParser` · `CommandType` · `Color` · `DebugLogger` · `GameSession` · `SessionStatus`
+`GGClient` · `ServerListener` · `CLIHang;er`
 
 **Travail effectué :**
 ```
@@ -351,7 +351,7 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 **Nom :** Thomas Bissonette-Royer
 
 **Classes responsables :**
-`GGClient` · `ServerListener` · `CLIHandler`
+`SecurityManager` · `Room` · `GameSession`
 
 **Travail effectué :**
 ```
@@ -368,7 +368,7 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 **Nom :** Émeric Renaud
 
 **Classes responsables :**
-`P2PManager` · `PeerListener` · `GameEngine` · `GuessRecord` · `Feedback`
+`GGServer` · `ClientHandler` · `permissionManager` 
 
 **Travail effectué :**
 ```
