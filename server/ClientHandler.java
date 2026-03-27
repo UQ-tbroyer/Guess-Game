@@ -214,7 +214,9 @@ public class ClientHandler implements Runnable {
         }
 
         // L'admin rejoint automatiquement sa salle
-        room.addPlayer(playerName, clientIp);
+        //room.addPlayer(playerName, clientIp);
+        String adminP2p = clientIp + ":0";
+        room.addPlayer(this, adminP2p);
         currentRoom = roomName;
 
         send(MessageParser.serialize(CommandType.ROOM_CREATED, roomName));
@@ -277,7 +279,14 @@ public class ClientHandler implements Runnable {
             } catch (NumberFormatException ignored) {}
         }
 
-        room.addPlayer(playerName, clientIp, p2pPort);
+        //room.addPlayer(playerName, clientIp, p2pPort);
+        //currentRoom = roomName;
+
+        String p2pAddress = clientIp + ":" + p2pPort;
+        if (!room.addPlayer(this, p2pAddress)) {
+            sendError("Impossible d'ajouter le joueur à la salle (conflit interne).");
+            return;
+        }
         currentRoom = roomName;
 
         // Notifier les autres joueurs de la salle
@@ -555,7 +564,7 @@ public class ClientHandler implements Runnable {
      * @param rawMessage le message à diffuser
      */
     private void broadcastToRoom(Room room, String rawMessage) {
-        for (String pName : room.getPlayers()) {
+        for (String pName : room.getPlayerNames()) {
             ClientHandler handler = server.getClient(pName);
             if (handler != null) {
                 handler.send(rawMessage);

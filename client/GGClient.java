@@ -135,7 +135,7 @@ public class GGClient {
     public static void main(String[] args) {
         String ip         = (args.length > 0) ? args[0] : "127.0.0.1";
         int    port       = (args.length > 1) ? Integer.parseInt(args[1]) : 5000;
-        String playerName = (args.length > 2) ? args[2] : "Player";
+        String playerName = (args.length > 2) ? args[2] : "bob";
 
         GGClient client = new GGClient(ip, port, playerName);
         client.connect();
