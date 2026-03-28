@@ -392,4 +392,9 @@ public class P2PManager {
     public GameEngine getGameEngine()        { return gameEngine; }
     public String     getPlayerName()        { return playerName; }
     public String     getCurrentSecretOwner(){ return currentSecretOwner; }
+
+    public int getLocalPort() {
+        return (p2pServerSocket != null && !p2pServerSocket.isClosed())
+                ? p2pServerSocket.getLocalPort() : 0;
+    }
 }

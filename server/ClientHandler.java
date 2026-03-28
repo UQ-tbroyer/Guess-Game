@@ -444,8 +444,9 @@ public class ClientHandler implements Runnable {
         }
 
         // TODO (Thomas) : créer une GameSession côté serveur pour cette partie solo
-        // GameSession session = new GameSession(playerName, maxAttempts);
-        // session.start();
+        //GameSession session = new GameSession(playerName, maxAttempts);
+        //session.start();
+        //------------------------
 
         send(MessageParser.serialize(CommandType.SERVER_GAME_STARTED,
                 String.valueOf(maxAttempts)));
@@ -462,10 +463,11 @@ public class ClientHandler implements Runnable {
      */
     private void onGuess(Message msg) {
         // TODO (Thomas) : récupérer la GameSession de ce joueur et calculer le feedback
-        // GameSession session = activeServerSessions.get(playerName);
-        // if (session == null) { sendError("Aucune partie en cours."); return; }
-        // Feedback fb = session.checkGuess(msg);
-        // send(fb.toGGString());
+        //GameSession session = activeServerSessions.get(playerName);
+        //if (session == null) { sendError("Aucune partie en cours."); return; }
+        //Feedback fb = session.checkGuess(msg);
+        //send(fb.toGGString());
+        //--------------------------------
 
         // Placeholder : on répond avec un feedback fictif pour que le client ne bloque pas
         logger.logEvent("GUESS reçu de " + playerName + " (mode solo — délégué à GameSession).");

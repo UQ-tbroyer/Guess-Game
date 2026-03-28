@@ -21,6 +21,7 @@ public class GGClient {
 
     private String serverIp;
     private int serverPort;
+    private int p2pPort;
     private Socket serverSocket;
     private String playerName;
 
@@ -50,6 +51,15 @@ public class GGClient {
 
             // Initialisation du gestionnaire P2P
             p2pManager = new P2PManager(playerName);
+
+            try {
+                // Démarrer le serveur P2P sur un port libre
+                p2pManager.startListening(0);
+                // Récupérer le port réellement attribué
+                p2pPort = p2pManager.getLocalPort(); // à ajouter dans P2PManager
+            } catch (IOException e) {
+                System.err.println("Impossible de démarrer le serveur P2P");
+            }
 
             // Démarrage du thread d'écoute du serveur
             serverListener = new ServerListener(serverSocket, this);
@@ -124,6 +134,7 @@ public class GGClient {
     public String     getPlayerName()  { return playerName;  }
     public P2PManager getP2PManager()  { return p2pManager;  }
     public CLIHandler getCLIHandler()  { return cliHandler;  }
+    public int getP2pPort() { return p2pPort; }
 
     // ── Point d'entrée ───────────────────────────────────────────────────────
 

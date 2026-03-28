@@ -103,7 +103,8 @@ public class CLIHandler extends Thread {
             case "create":
                 // Usage : create <nom_salle> <max_joueurs> <max_tentatives>
                 if (tokens.length < 4) { printUsage("create <salle> <maxJoueurs> <maxTentatives>"); break; }
-                client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3]);
+                //client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3]);
+                client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3] + "|" + client.getP2pPort());
                 break;
 
             case "list":
@@ -113,7 +114,8 @@ public class CLIHandler extends Thread {
             case "join":
                 // Usage : join <nom_salle>
                 if (tokens.length < 2) { printUsage("join <nom_salle>"); break; }
-                client.sendToServer("GG|JOIN_ROOM|" + tokens[1]);
+                //client.sendToServer("GG|JOIN_ROOM|" + tokens[1]);
+                client.sendToServer("GG|JOIN_ROOM|" + tokens[1] + "|" + client.getP2pPort());
                 break;
 
             case "leave":
