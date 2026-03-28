@@ -180,23 +180,27 @@ public class ClientHandler implements Runnable {
      * Réponse : GG|ROOM_CREATED|nom_salle  ou  GG|ERROR|raison
      */
     private void onCreateRoom(Message msg) {
-        try {
-            msg.requireFields(3);
-        } catch (ParseException e) {
-            sendError("CREATE_ROOM requiert : nom_salle|max_joueurs|max_tentatives");
-            return;
-        }
+    try {
+        msg.requireFields(3); // minimum 3, mais peut avoir 4
+    } catch (ParseException e) {
+        sendError("CREATE_ROOM requiert : nom_salle|max_joueurs|max_tentatives");
+        return;
+    }
 
-        String roomName = msg.getField(0).trim();
-        int maxPlayers, maxAttempts;
+    String roomName = msg.getField(0).trim();
+    int maxPlayers, maxAttempts;
+    int p2pPort = 0;
 
-        try {
-            maxPlayers  = Integer.parseInt(msg.getField(1));
-            maxAttempts = Integer.parseInt(msg.getField(2));
-        } catch (NumberFormatException e) {
-            sendError("max_joueurs et max_tentatives doivent être des entiers.");
-            return;
+    try {
+        maxPlayers  = Integer.parseInt(msg.getField(1));
+        maxAttempts = Integer.parseInt(msg.getField(2));
+        if (msg.getFieldCount() >= 4) {
+            p2pPort = Integer.parseInt(msg.getField(3));
         }
+    } catch (NumberFormatException e) {
+        sendError("max_joueurs et max_tentatives doivent être des entiers.");
+        return;
+    }
 
         if (maxPlayers < 2) {
             sendError("Une salle doit accueillir au moins 2 joueurs.");
@@ -215,7 +219,7 @@ public class ClientHandler implements Runnable {
 
         // L'admin rejoint automatiquement sa salle
         //room.addPlayer(playerName, clientIp);
-        String adminP2p = clientIp + ":0";
+        String adminP2p = clientIp + ":" + p2pPort;
         room.addPlayer(this, adminP2p);
         currentRoom = roomName;
 
@@ -374,44 +378,57 @@ public class ClientHandler implements Runnable {
      * ou GG|ERROR|raison
      */
     private void onStartGame(Message msg) {
-        try {
-            msg.requireFields(1);
-        } catch (ParseException e) {
-            sendError("START_GAME requiert un nom de salle.");
-            return;
-        }
-
-        String roomName = msg.getField(0).trim();
-        Room room = server.getRoom(roomName);
-
-        if (room == null) {
-            sendError("La salle '" + roomName + "' n'existe pas.");
-            return;
-        }
-
-        if (!permissions.canStartGame(room, playerName)) {
-            if (!permissions.isAdmin(room, playerName)) {
-                sendError("Seul l'admin peut démarrer la partie.");
-            } else if (room.isGameInProgress()) {
-                sendError("Une partie est déjà en cours.");
-            } else if (room.getPlayerCount() < 2) {
-                sendError("Il faut au moins 2 joueurs pour démarrer.");
-            } else {
-                sendError("Impossible de démarrer la partie.");
-            }
-            return;
-        }
-
-        room.setGameInProgress(true);
-
-        // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
-        String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
-                roomName, room.getGameStartedPayload());
-        broadcastToRoom(room, gameStartedMsg);
-
-        logger.logEvent("Partie démarrée dans la salle : " + roomName
-                + " | Joueurs : " + room.getPlayersAsString());
+    try {
+        msg.requireFields(1);
+    } catch (ParseException e) {
+        sendError("START_GAME requiert un nom de salle.");
+        return;
     }
+
+    String roomName = msg.getField(0).trim();
+    Room room = server.getRoom(roomName);
+
+    if (room == null) {
+        sendError("La salle '" + roomName + "' n'existe pas.");
+        return;
+    }
+
+    if (!permissions.canStartGame(room, playerName)) {
+        if (!permissions.isAdmin(room, playerName)) {
+            sendError("Seul l'admin peut démarrer la partie.");
+        } else if (room.isGameInProgress()) {
+            sendError("Une partie est déjà en cours.");
+        } else if (room.getPlayerCount() < 2) {
+            sendError("Il faut au moins 2 joueurs pour démarrer.");
+        } else {
+            sendError("Impossible de démarrer la partie.");
+        }
+        return;
+    }
+
+    room.setGameInProgress(true);
+
+    // Construction du payload GAME_STARTED
+    String payload = room.buildP2PList();
+    
+    // Log pour déboguer
+    logger.logEvent("GAME_STARTED payload: " + payload);
+    
+    // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
+    String gameStartedMsg = "GG|GAME_STARTED|" + roomName + "|" + payload;
+    
+    // Diffuser à tous les joueurs de la salle
+    for (String pName : room.getPlayerNames()) {
+        ClientHandler handler = server.getClient(pName);
+        if (handler != null) {
+            handler.send(gameStartedMsg);
+            logger.logEvent("GAME_STARTED envoyé à " + pName + ": " + gameStartedMsg);
+        }
+    }
+
+    logger.logEvent("Partie démarrée dans la salle : " + roomName
+            + " | Joueurs : " + room.getPlayersAsString());
+}
 
     /**
      * GG|PLAY_SERVER|max_tentatives

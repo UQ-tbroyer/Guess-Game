@@ -45,45 +45,45 @@ public class GGClient {
      * puis démarre ServerListener et CLIHandler.
      */
     public void connect(String ip, String port, int portInt) {
+    try {
+        serverSocket = new Socket(ip, portInt);
+        System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
+
+        // Initialisation du gestionnaire P2P
+        p2pManager = new P2PManager(playerName);
+
         try {
-            serverSocket = new Socket(ip, portInt);
-            System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
-
-            // Initialisation du gestionnaire P2P
-            p2pManager = new P2PManager(playerName);
-
-            try {
-                // Démarrer le serveur P2P sur un port libre
-                p2pManager.startListening(0);
-                // Récupérer le port réellement attribué
-                p2pPort = p2pManager.getLocalPort(); // à ajouter dans P2PManager
-            } catch (IOException e) {
-                System.err.println("Impossible de démarrer le serveur P2P");
-            }
-
-            // Démarrage du thread d'écoute du serveur
-            serverListener = new ServerListener(serverSocket, this);
-            serverListener.start();
-
-            // Envoi du message de connexion initial
-            sendToServer("GG|CONNECT|" + playerName);
-
-            // Démarrage de l'interface CLI (bloquant jusqu'à déconnexion)
-            cliHandler = new CLIHandler(this);
-            cliHandler.start();
-
-            // Attente de la fin des threads avant de quitter
-            try {
-                cliHandler.join();
-                serverListener.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
+            // Démarrer le serveur P2P sur un port libre
+            p2pManager.startListening(0);
+            p2pPort = p2pManager.getLocalPort();
+            System.out.println("[GGClient] Serveur P2P démarré sur le port " + p2pPort);
         } catch (IOException e) {
-            System.err.println("[GGClient] Impossible de se connecter au serveur : " + e.getMessage());
+            System.err.println("[GGClient] Impossible de démarrer le serveur P2P: " + e.getMessage());
+            p2pPort = 0;
         }
+
+        // Démarrage du thread d'écoute du serveur
+        serverListener = new ServerListener(serverSocket, this);
+        serverListener.start();
+
+        // Envoi du message de connexion initial
+        sendToServer("GG|CONNECT|" + playerName);
+
+        // Démarrage de l'interface CLI
+        cliHandler = new CLIHandler(this);
+        cliHandler.start();
+
+        try {
+            cliHandler.join();
+            serverListener.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+    } catch (IOException e) {
+        System.err.println("[GGClient] Impossible de se connecter au serveur : " + e.getMessage());
     }
+}
 
     /**
      * Surcharge de connect() utilisant les champs de l'instance.

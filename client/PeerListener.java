@@ -155,28 +155,36 @@ public class PeerListener extends Thread {
      * Reçu par le détenteur du secret — calcule et renvoie le feedback.
      */
     private void onGuess(Message msg) {
-        if (!gameEngine.isSecretOwner()) {
-            logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
-            return;
-        }
-        try {
-            msg.requireFields(GameEngine.COMBINATION_SIZE);
-
-            List<Color> guess = new ArrayList<>();
-            for (int i = 0; i < GameEngine.COMBINATION_SIZE; i++) {
-                guess.add(Color.fromString(msg.getField(i)));
-            }
-
-            String guesser = (peerName != null) ? peerName : "inconnu";
-            Feedback feedback = gameEngine.checkGuess(guess, guesser);
-
-            logger.logEvent("Feedback pour " + guesser + " : " + feedback);
-            p2pManager.sendFeedback(guesser, feedback);
-
-        } catch (ParseException e) {
-            logger.logError("PeerListener : GUESS mal formé.", e);
-        }
+    if (!gameEngine.isSecretOwner()) {
+        logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
+        return;
     }
+    try {
+        msg.requireFields(GameEngine.COMBINATION_SIZE);
+
+        List<Color> guess = new ArrayList<>();
+        for (int i = 0; i < GameEngine.COMBINATION_SIZE; i++) {
+            guess.add(Color.fromString(msg.getField(i)));
+        }
+
+        // Si le pair n'est pas encore identifié, on l'identifie maintenant
+        if (peerName == null) {
+            // On ne peut pas connaître son nom depuis le message GUESS
+            // On utilise l'adresse IP comme identifiant temporaire
+            peerName = peerSocket.getInetAddress().getHostAddress() + ":" + peerSocket.getPort();
+            logger.logEvent("PeerListener : pair non identifié, utilisation de l'adresse: " + peerName);
+        }
+
+        String guesser = peerName;
+        Feedback feedback = gameEngine.checkGuess(guess, guesser);
+
+        logger.logEvent("Feedback pour " + guesser + " : " + feedback);
+        p2pManager.sendFeedback(guesser, feedback);
+
+    } catch (ParseException e) {
+        logger.logError("PeerListener : GUESS mal formé.", e);
+    }
+}
 
     /**
      * GG|FEEDBACK|couleurs_correctes|positions_correctes

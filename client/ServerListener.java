@@ -2,6 +2,8 @@ package client;
 
 import java.io.*;
 import java.net.*;
+import java.util.HashMap;
+import java.util.Map;
 
 
 
@@ -233,13 +235,18 @@ public class ServerListener extends Thread {
      *             nom:ip:port pour chaque joueur. P2PManager sait les parser.
      */
     private void onGameStarted(String rawMessage) {
-        System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
-        P2PManager p2p = client.getP2PManager();
-        if (p2p != null) {
-            // On passe le message brut ; P2PManager extrait les adresses
-            p2p.connectToPeers(parseAddresses(rawMessage));
-        }
+    System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
+    System.out.println("[ServerListener] Message reçu: " + rawMessage);
+    
+    P2PManager p2p = client.getP2PManager();
+    if (p2p != null) {
+        Map<String, String> addresses = parseAddresses(rawMessage);
+        System.out.println("[ServerListener] Adresses P2P parsées: " + addresses);
+        p2p.connectToPeers(addresses);
+    } else {
+        System.err.println("[ServerListener] P2PManager est null !");
     }
+}
 
     /**
      * Partie contre le serveur démarrée.
@@ -263,22 +270,33 @@ public class ServerListener extends Thread {
      *
      * @return Un tableau de type {"nom:ip:port", ...}
      */
-    private java.util.Map<String, String> parseAddresses(String rawMessage) {
-        java.util.Map<String, String> addresses = new java.util.HashMap<>();
-        String[] parts = rawMessage.split("\\|");
-        if (parts.length < 4) return addresses;
-
-        // parts[3] = "joueur1:ip1:port1,joueur2:ip2:port2"
-        String[] entries = parts[3].split(",");
-        for (String entry : entries) {
-            String[] tokens = entry.trim().split(":");
-            if (tokens.length == 3) {
-                // clé = nom, valeur = ip:port
-                addresses.put(tokens[0], tokens[1] + ":" + tokens[2]);
-            }
-        }
+    private Map<String, String> parseAddresses(String rawMessage) {
+    Map<String, String> addresses = new HashMap<>();
+    String[] parts = rawMessage.split("\\|");
+    
+    System.out.println("[ServerListener] parseAddresses - parts.length = " + parts.length);
+    for (int i = 0; i < parts.length; i++) {
+        System.out.println("[ServerListener] parts[" + i + "] = " + parts[i]);
+    }
+    
+    if (parts.length < 4) {
+        System.err.println("[ServerListener] parseAddresses - pas assez de champs");
         return addresses;
     }
+
+    // parts[3] = "joueur1:ip1:port1,joueur2:ip2:port2"
+    String[] entries = parts[3].split(",");
+    for (String entry : entries) {
+        String[] tokens = entry.trim().split(":");
+        if (tokens.length == 3) {
+            addresses.put(tokens[0], tokens[1] + ":" + tokens[2]);
+            System.out.println("[ServerListener] Ajouté: " + tokens[0] + " -> " + tokens[1] + ":" + tokens[2]);
+        } else {
+            System.err.println("[ServerListener] Entrée invalide: " + entry);
+        }
+    }
+    return addresses;
+}
 
     // ── Arrêt propre ─────────────────────────────────────────────────────────
 

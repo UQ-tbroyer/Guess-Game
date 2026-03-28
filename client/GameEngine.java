@@ -166,15 +166,18 @@ public class GameEngine {
             }
         }
 
-        // Enregistrement dans l'historique
-        GuessRecord record = new GuessRecord(guess, correctColors, correctPositions, playerName);
-        guessHistory.add(record);
-        logger.logEvent("Proposition enregistrée :\n" + record.toTraceString());
+        // Calculer le nombre total de couleurs correctes (incluant les bien placées)
+int totalCorrectColors = correctColors + correctPositions;
 
-        // Décrémenter les tentatives (0 si non configuré = illimité)
-        if (attemptsLeft > 0) attemptsLeft--;
+// Enregistrement dans l'historique
+GuessRecord record = new GuessRecord(guess, totalCorrectColors, correctPositions, playerName);
+guessHistory.add(record);
+logger.logEvent("Proposition enregistrée :\n" + record.toTraceString());
 
-        return new Feedback(correctColors, correctPositions);
+// Décrémenter les tentatives
+if (attemptsLeft > 0) attemptsLeft--;
+
+return new Feedback(totalCorrectColors, correctPositions);
     }
 
     // -------------------------------------------------------------------------

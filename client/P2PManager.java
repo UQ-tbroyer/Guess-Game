@@ -107,28 +107,29 @@ public class P2PManager {
      * @throws IOException si le port est déjà utilisé ou inaccessible
      */
     public void startListening(int port) throws IOException {
-        p2pServerSocket = new ServerSocket(port);
-        logger.logEvent("P2PManager : écoute P2P démarrée sur le port " + port);
+    p2pServerSocket = new ServerSocket(port);
+    int actualPort = p2pServerSocket.getLocalPort();
+    logger.logEvent("P2PManager : écoute P2P démarrée sur le port " + actualPort);
 
-        Thread acceptThread = new Thread(() -> {
-            while (!p2pServerSocket.isClosed()) {
-                try {
-                    Socket peerSocket = p2pServerSocket.accept();
-                    logger.logEvent("P2PManager : pair entrant depuis "
-                            + peerSocket.getInetAddress().getHostAddress());
-                    PeerListener listener = new PeerListener(peerSocket, this, gameEngine);
-                    peerListeners.add(listener);
-                    listener.start();
-                } catch (IOException e) {
-                    if (!p2pServerSocket.isClosed()) {
-                        logger.logError("P2PManager : erreur acceptation pair.", e);
-                    }
+    Thread acceptThread = new Thread(() -> {
+        while (!p2pServerSocket.isClosed()) {
+            try {
+                Socket peerSocket = p2pServerSocket.accept();
+                logger.logEvent("P2PManager : pair entrant depuis "
+                        + peerSocket.getInetAddress().getHostAddress());
+                PeerListener listener = new PeerListener(peerSocket, this, gameEngine);
+                peerListeners.add(listener);
+                listener.start();
+            } catch (IOException e) {
+                if (!p2pServerSocket.isClosed()) {
+                    logger.logError("P2PManager : erreur acceptation pair.", e);
                 }
             }
-        }, "P2P-AcceptThread");
-        acceptThread.setDaemon(true);
-        acceptThread.start();
-    }
+        }
+    }, "P2P-AcceptThread");
+    acceptThread.setDaemon(true);
+    acceptThread.start();
+}
 
     // -------------------------------------------------------------------------
     // Connexion vers les pairs
@@ -287,15 +288,24 @@ public class P2PManager {
      * @param feedback    objet Feedback calculé par GameEngine
      */
     public void sendFeedback(String guesserName, Feedback feedback) {
-        String msg = feedback.toGGString();
-        logger.logOutgoingRaw(msg);
+    String msg = feedback.toGGString();
+    logger.logOutgoingRaw(msg);
+    
+    // Essayer d'envoyer au joueur spécifique
+    Socket socket = peers.get(guesserName);
+    if (socket != null && !socket.isClosed()) {
         sendToPeer(guesserName, msg);
-
-        if (feedback.isWin()) {
-            String winnerMsg = MessageParser.serialize(CommandType.WINNER, guesserName);
-            broadcast(winnerMsg);
-        }
+    } else {
+        // Si le destinataire n'est pas trouvé, diffuser à tous
+        logger.logEvent("P2PManager : destinataire '" + guesserName + "' non trouvé, diffusion à tous.");
+        broadcast(msg);
     }
+
+    if (feedback.isWin()) {
+        String winnerMsg = MessageParser.serialize(CommandType.WINNER, guesserName);
+        broadcast(winnerMsg);
+    }
+}
 
     /**
      * Annonce que ce client a choisi son secret (GG|SECRET_SET|nom_joueur).
@@ -394,7 +404,8 @@ public class P2PManager {
     public String     getCurrentSecretOwner(){ return currentSecretOwner; }
 
     public int getLocalPort() {
-        return (p2pServerSocket != null && !p2pServerSocket.isClosed())
-                ? p2pServerSocket.getLocalPort() : 0;
+    return (p2pServerSocket != null && !p2pServerSocket.isClosed()) 
+            ? p2pServerSocket.getLocalPort() 
+            : 0;
     }
 }

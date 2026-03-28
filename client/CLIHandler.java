@@ -1,6 +1,10 @@
 package client;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
+
+import common.Color;
 
 /**
  * CLIHandler — Thread de l'interface utilisateur en ligne de commande.
@@ -145,15 +149,31 @@ public class CLIHandler extends Thread {
 
             // ── Messages de jeu P2P ──────────────────────────────────────
             case "secret":
-                // Annonce que ce joueur possède le secret
-                // Usage : secret
-                P2PManager p2p = client.getP2PManager();
-                if (p2p != null) {
-                    p2p.broadcast("GG|SECRET_SET|" + client.getPlayerName());
-                } else {
-                    System.out.println("[CLIHandler] P2PManager non initialisé.");
-                }
-                break;
+    // Annonce que ce joueur possède le secret
+    P2PManager p2p = client.getP2PManager();
+    if (p2p != null) {
+        // Informer les autres joueurs
+        p2p.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+        
+        // Informer le GameEngine local qu'on est détenteur
+        // Créer un secret par défaut (l'utilisateur pourra le modifier plus tard)
+        List<Color> defaultSecret = new ArrayList<>();
+        defaultSecret.add(Color.RED);
+        defaultSecret.add(Color.GREEN);
+        defaultSecret.add(Color.BLUE);
+        defaultSecret.add(Color.YELLOW);
+        
+        try {
+            p2p.getGameEngine().setSecret(defaultSecret);
+            System.out.println("[CLIHandler] Vous êtes maintenant détenteur du secret : " 
+                    + p2p.getGameEngine().getSecretAsString());
+        } catch (IllegalArgumentException e) {
+            System.out.println("[CLIHandler] Erreur: " + e.getMessage());
+        }
+    } else {
+        System.out.println("[CLIHandler] P2PManager non initialisé.");
+    }
+    break;
 
             case "guess":
                 // Usage : guess <c1> <c2> <c3> <c4>
