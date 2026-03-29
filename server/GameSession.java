@@ -30,6 +30,7 @@ import java.util.UUID;
  *  - Cette classe n'est pas thread-safe en elle-même : la synchronisation est
  *    assurée par Room ou par ClientHandler qui l'appelle dans un bloc synchronized.
  */
+@SuppressWarnings("unused")
 public class GameSession {
 
     /** Nombre de couleurs dans une combinaison. */

@@ -116,9 +116,13 @@ public class CLIHandler extends Thread {
                 break;
 
             case "join":
-                // Usage : join <nom_salle>
                 if (tokens.length < 2) { printUsage("join <nom_salle>"); break; }
-                //client.sendToServer("GG|JOIN_ROOM|" + tokens[1]);
+
+                if (client.getCurrentRoom() != null) {
+                    System.out.println("Vous êtes déjà dans la salle : " + client.getCurrentRoom() + ". Faites 'leave' avant de rejoindre une autre salle.");
+                    break;
+                }
+
                 client.sendToServer("GG|JOIN_ROOM|" + tokens[1] + "|" + client.getP2pPort());
                 break;
 
@@ -149,31 +153,38 @@ public class CLIHandler extends Thread {
 
             // ── Messages de jeu P2P ──────────────────────────────────────
             case "secret":
-    // Annonce que ce joueur possède le secret
-    P2PManager p2p = client.getP2PManager();
-    if (p2p != null) {
-        // Informer les autres joueurs
-        p2p.broadcast("GG|SECRET_SET|" + client.getPlayerName());
-        
-        // Informer le GameEngine local qu'on est détenteur
-        // Créer un secret par défaut (l'utilisateur pourra le modifier plus tard)
-        List<Color> defaultSecret = new ArrayList<>();
-        defaultSecret.add(Color.RED);
-        defaultSecret.add(Color.GREEN);
-        defaultSecret.add(Color.BLUE);
-        defaultSecret.add(Color.YELLOW);
-        
-        try {
-            p2p.getGameEngine().setSecret(defaultSecret);
-            System.out.println("[CLIHandler] Vous êtes maintenant détenteur du secret : " 
-                    + p2p.getGameEngine().getSecretAsString());
-        } catch (IllegalArgumentException e) {
-            System.out.println("[CLIHandler] Erreur: " + e.getMessage());
-        }
-    } else {
-        System.out.println("[CLIHandler] P2PManager non initialisé.");
-    }
-    break;
+                // Usage : secret <c1> <c2> <c3> <c4>
+                // Exemple : secret RED GREEN BLUE YELLOW
+                if (tokens.length < 5) { printUsage("secret <RED|GREEN|BLUE|YELLOW|ORANGE> x4"); break; }
+                P2PManager p2p = client.getP2PManager();
+                if (p2p != null) {
+                    // Construire la liste de couleurs depuis les arguments
+                    List<Color> secret = new ArrayList<>();
+                    boolean colorError = false;
+                    for (int i = 1; i <= 4; i++) {
+                        try {
+                            secret.add(Color.valueOf(tokens[i].toUpperCase()));
+                        } catch (IllegalArgumentException e) {
+                            System.out.println("[CLIHandler] Couleur invalide : '" + tokens[i]
+                                    + "'. Valeurs acceptées : RED, GREEN, BLUE, YELLOW, ORANGE");
+                            colorError = true;
+                            break;
+                        }
+                    }
+                    if (colorError) break;
+
+                    try {
+                        p2p.getGameEngine().setSecret(secret);
+                        p2p.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+                        System.out.println("[CLIHandler] Secret défini : "
+                                + p2p.getGameEngine().getSecretAsString());
+                    } catch (IllegalArgumentException e) {
+                        System.out.println("[CLIHandler] Erreur: " + e.getMessage());
+                    }
+                } else {
+                    System.out.println("[CLIHandler] P2PManager non initialisé.");
+                }
+                break;
 
             case "guess":
                 // Usage : guess <c1> <c2> <c3> <c4>
@@ -262,7 +273,7 @@ public class CLIHandler extends Thread {
         System.out.println("╠══════════════════════════════════════════════════════════╣");
         System.out.println("║  JEU (P2P)                                               ║");
         System.out.println("║    playserver <tentatives>    Jouer contre le serveur    ║");
-        System.out.println("║    secret                     Annoncer son secret        ║");
+        System.out.println("║    secret <c1> <c2> <c3> <c4> Définir son secret        ║");
         System.out.println("║    guess  <c1> <c2> <c3> <c4> Proposer une combinaison v ║");
         System.out.println("║      Couleurs : RED GREEN BLUE YELLOW ORANGE             ║");
         System.out.println("║    feedback <couleurs> <pos>   Donner le feedback        ║");

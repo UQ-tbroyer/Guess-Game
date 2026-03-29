@@ -18,7 +18,7 @@ import java.net.*;
 public class GGClient {
 
     // ── Champs ──────────────────────────────────────────────────────────────
-
+	private String currentRoom;
     private String serverIp;
     private int serverPort;
     private int p2pPort;
@@ -151,4 +151,14 @@ public class GGClient {
         GGClient client = new GGClient(ip, port, playerName);
         client.connect();
     }
+
+	public String getCurrentRoom() {
+		// TODO Auto-generated method stub
+		return currentRoom;
+	}
+
+	public void setCurrentRoom(String string) {
+		// TODO Auto-generated method stub
+		currentRoom = string;
+	}
 }

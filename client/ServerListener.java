@@ -124,6 +124,7 @@ public class ServerListener extends Thread {
 
             case "LEFT_ROOM":
                 // GG|LEFT_ROOM|nom_salle
+            	client.setCurrentRoom(null);
                 onLeftRoom(parts);
                 break;
 
@@ -196,6 +197,7 @@ public class ServerListener extends Thread {
     private void onJoinedRoom(String[] parts) {
         String room    = (parts.length > 2) ? parts[2] : "?";
         String players = (parts.length > 3) ? parts[3] : "";
+        client.setCurrentRoom(room);
         System.out.println("[ServerListener] Rejoint la salle : " + room);
         if (!players.isEmpty()) {
             String[] playerList = players.split(",");
