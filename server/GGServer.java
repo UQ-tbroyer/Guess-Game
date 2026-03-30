@@ -22,6 +22,10 @@ public class GGServer {
     private final ConcurrentHashMap<String, Room> rooms =
             new ConcurrentHashMap<>();
 
+    // Sessions solo (PLAY_SERVER) par joueur
+    private final ConcurrentHashMap<String, GameSession> soloSessions =
+            new ConcurrentHashMap<>();
+
     private final PermissionManager permissionManager = new PermissionManager();
 
     private final int port;
@@ -130,6 +134,25 @@ public class GGServer {
     public void removeRoom(String roomName) {
         rooms.remove(roomName);
         System.out.println("[GGServer] Salle supprimée : " + roomName);
+    }
+
+    public GameSession createSoloSession(String playerName, int maxAttempts) {
+        if (soloSessions.containsKey(playerName)) {
+            return null; // session déjà en cours pour ce joueur
+        }
+        GameSession session = new GameSession(playerName, maxAttempts);
+        session.generateSecret();
+        soloSessions.put(playerName, session);
+        System.out.println("[GGServer] Session solo démarrée pour " + playerName + " (" + maxAttempts + " tentatives)");
+        return session;
+    }
+
+    public GameSession getSoloSession(String playerName) {
+        return soloSessions.get(playerName);
+    }
+
+    public void removeSoloSession(String playerName) {
+        soloSessions.remove(playerName);
     }
 
     public String getRoomListAsString() {

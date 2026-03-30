@@ -5,7 +5,6 @@ import common.DebugLogger;
 import common.Message;
 import common.MessageParser;
 import common.ParseException;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -155,6 +154,10 @@ public class PeerListener extends Thread {
      * Reçu par le détenteur du secret — calcule et renvoie le feedback.
      */
     private void onGuess(Message msg) {
+        if (gameEngine.isGameOver()) {
+            logger.logEvent("PeerListener : GUESS reçu mais la manche est terminée, message ignoré.");
+            return;
+        }
         if (!gameEngine.isSecretOwner()) {
             logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
             return;
@@ -190,6 +193,10 @@ public class PeerListener extends Thread {
             logger.logEvent("Feedback reçu → Couleurs OK : " + correctColors
                     + " | Positions OK : " + correctPositions
                     + (feedback.isWin() ? " ★ VICTOIRE !" : ""));
+            if (feedback.isWin()) {
+                gameEngine.setGameOver(true);
+                logger.logEvent("PeerListener : marque la manche comme terminée (WINNER)." );
+            }
         } catch (ParseException | NumberFormatException e) {
             logger.logError("PeerListener : FEEDBACK mal formé.", e);
         }
@@ -201,7 +208,12 @@ public class PeerListener extends Thread {
     private void onWinner(Message msg) {
         try {
             msg.requireFields(1);
-            logger.logEvent("★★★ GAGNANT : " + msg.getField(0) + " ★★★");
+            String winner = msg.getField(0);
+            String consoleMsg = "★★★ GAGNANT : " + winner + " ★★★";
+            logger.logEvent(consoleMsg);
+            System.out.println("[GAME] " + consoleMsg);
+            gameEngine.setGameOver(true);
+            logger.logEvent("PeerListener : manche terminée suite à WINNER.");
         } catch (ParseException e) {
             logger.logError("PeerListener : WINNER mal formé.", e);
         }

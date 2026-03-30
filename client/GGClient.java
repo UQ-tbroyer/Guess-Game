@@ -29,6 +29,8 @@ public class GGClient {
     // ServerListener est démarré dans connect() et gardé en référence pour join()
     private ServerListener serverListener;
 
+    private volatile boolean playingServerGame = false;
+
     // ── Constructeur ────────────────────────────────────────────────────────
 
     public GGClient(String serverIp, int serverPort, String playerName) {
@@ -50,6 +52,12 @@ public class GGClient {
 
             // Initialisation du gestionnaire P2P
             p2pManager = new P2PManager(playerName);
+            try {
+                p2pManager.startListening(0); // port dynamique pour P2P
+                System.out.println("[GGClient] P2P écoute sur le port " + p2pManager.getListeningPort());
+            } catch (IOException e) {
+                System.err.println("[GGClient] impossible de démarrer le serveur P2P : " + e.getMessage());
+            }
 
             // Démarrage du thread d'écoute du serveur
             serverListener = new ServerListener(serverSocket, this);
@@ -113,6 +121,7 @@ public class GGClient {
             if (serverSocket  != null && !serverSocket.isClosed()) {
                 serverSocket.close();
             }
+            playingServerGame = false;
             System.out.println("[GGClient] Déconnecté du serveur.");
         } catch (IOException e) {
             System.err.println("[GGClient] Erreur lors de la déconnexion : " + e.getMessage());
@@ -121,9 +130,12 @@ public class GGClient {
 
     // ── Getters ─────────────────────────────────────────────────────────────
 
-    public String     getPlayerName()  { return playerName;  }
-    public P2PManager getP2PManager()  { return p2pManager;  }
-    public CLIHandler getCLIHandler()  { return cliHandler;  }
+    public String     getPlayerName()      { return playerName;  }
+    public P2PManager getP2PManager()      { return p2pManager;  }
+    public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
+    public CLIHandler getCLIHandler()      { return cliHandler;  }
+    public boolean    isPlayingServerGame() { return playingServerGame; }
+    public void       setPlayingServerGame(boolean playing) { playingServerGame = playing; }
 
     // ── Point d'entrée ───────────────────────────────────────────────────────
 

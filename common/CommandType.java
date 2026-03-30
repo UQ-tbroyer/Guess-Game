@@ -99,6 +99,12 @@ public enum CommandType {
      */
     NEW_GAME,
 
+    /**
+     * Serveur → Client/Pairs : GG|GAME_OVER|WIN|joueur or GG|GAME_OVER|LOSE|NONE
+     * Signale la fin d'une partie (solo ou salle) avec le résultat.
+     */
+    GAME_OVER,
+
     // --- Erreur générique ---
     /**
      * Serveur → Client : GG|ERROR|message_erreur

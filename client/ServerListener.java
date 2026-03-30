@@ -139,9 +139,23 @@ public class ServerListener extends Thread {
                 onServerGameStarted(parts);
                 break;
 
+            case "FEEDBACK":
+                // GG|FEEDBACK|couleurs_correctes|positions_correctes
+                onServerFeedback(parts);
+                break;
+
+            case "WINNER":
+                // GG|WINNER|nom_joueur
+                onServerWinner(parts);
+                break;
+
             // ── Nouveau jeu ──────────────────────────────────────────────
             case "NEW_GAME":
                 onNewGame(parts);
+                break;
+
+            case "GAME_OVER":
+                onGameOver(parts);
                 break;
 
             // ── Cas inconnu ──────────────────────────────────────────────
@@ -246,6 +260,36 @@ public class ServerListener extends Thread {
     private void onServerGameStarted(String[] parts) {
         int attempts = (parts.length > 2) ? Integer.parseInt(parts[2]) : 10;
         System.out.println("[ServerListener] Partie contre le serveur démarrée. Tentatives : " + attempts);
+
+        P2PManager p2p = client.getP2PManager();
+        if (p2p != null) {
+            p2p.getGameEngine().setMaxAttempts(attempts);
+        }
+        client.setPlayingServerGame(true);
+    }
+
+    /**
+     * Feedback de la partie solo (serveur -> client).
+     */
+    private void onServerFeedback(String[] parts) {
+        if (parts.length < 4) {
+            System.err.println("[ServerListener] FEEDBACK mal formé.");
+            return;
+        }
+        System.out.println("[ServerListener] Feedback solo : " + parts[2] + " couleurs correctes, " + parts[3] + " positions correctes.");
+        if (parts.length > 3 && Integer.parseInt(parts[3]) == GameEngine.COMBINATION_SIZE) {
+            System.out.println("[ServerListener] Bravo, vous avez gagné la partie solo !");
+            client.setPlayingServerGame(false);
+        }
+    }
+
+    /**
+     * Annonce du gagnant pour la partie solo (serveur -> client).
+     */
+    private void onServerWinner(String[] parts) {
+        String winner = (parts.length > 2) ? parts[2] : "?";
+        System.out.println("[ServerListener] WINNER : " + winner);
+        client.setPlayingServerGame(false);
     }
 
     /** Nouveau jeu dans la salle — réinitialise l'état local. */
@@ -253,6 +297,25 @@ public class ServerListener extends Thread {
         System.out.println("[ServerListener] Nouveau jeu ! Réinitialisation de l'état local.");
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) p2p.resetForNewGame();
+    }
+
+    /**
+     * Partie solo terminée (ou fin de partie en salle si jamais propagated).
+     * GG|GAME_OVER|WIN|joueur ou GG|GAME_OVER|LOSE|NONE
+     */
+    private void onGameOver(String[] parts) {
+        String result = (parts.length > 2) ? parts[2] : "UNKNOWN";
+        String winner = (parts.length > 3) ? parts[3] : "NONE";
+
+        if ("WIN".equalsIgnoreCase(result)) {
+            System.out.println("[ServerListener] Partie terminée : victoire de " + winner);
+        } else if ("LOSE".equalsIgnoreCase(result)) {
+            System.out.println("[ServerListener] Partie terminée : défait (pas de gagnant).\n");
+        } else {
+            System.out.println("[ServerListener] Partie terminée : résultat inconnu.");
+        }
+
+        client.setPlayingServerGame(false);
     }
 
     /**

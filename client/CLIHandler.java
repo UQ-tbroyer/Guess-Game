@@ -103,7 +103,12 @@ public class CLIHandler extends Thread {
             case "create":
                 // Usage : create <nom_salle> <max_joueurs> <max_tentatives>
                 if (tokens.length < 4) { printUsage("create <salle> <maxJoueurs> <maxTentatives>"); break; }
-                client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3]);
+                int p2pPortCreate = client.getP2PPort();
+                String createMsg = "GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3];
+                if (p2pPortCreate > 0) {
+                    createMsg += "|" + p2pPortCreate;
+                }
+                client.sendToServer(createMsg);
                 break;
 
             case "list":
@@ -113,7 +118,12 @@ public class CLIHandler extends Thread {
             case "join":
                 // Usage : join <nom_salle>
                 if (tokens.length < 2) { printUsage("join <nom_salle>"); break; }
-                client.sendToServer("GG|JOIN_ROOM|" + tokens[1]);
+                int p2pPortJoin = client.getP2PPort();
+                String joinMsg = "GG|JOIN_ROOM|" + tokens[1];
+                if (p2pPortJoin > 0) {
+                    joinMsg += "|" + p2pPortJoin;
+                }
+                client.sendToServer(joinMsg);
                 break;
 
             case "leave":
@@ -160,12 +170,17 @@ public class CLIHandler extends Thread {
                              + "|" + tokens[2].toUpperCase()
                              + "|" + tokens[3].toUpperCase()
                              + "|" + tokens[4].toUpperCase();
-                P2PManager p2pG = client.getP2PManager();
-                if (p2pG != null) {
-                    p2pG.sendGuess(java.util.Arrays.asList(
-                            tokens[1], tokens[2], tokens[3], tokens[4]));
+
+                if (client.isPlayingServerGame()) {
+                    client.sendToServer(guess);
                 } else {
-                    client.sendToServer(guess); // Fallback : partie contre serveur
+                    P2PManager p2pG = client.getP2PManager();
+                    if (p2pG != null) {
+                        p2pG.sendGuess(java.util.Arrays.asList(
+                                tokens[1], tokens[2], tokens[3], tokens[4]));
+                    } else {
+                        client.sendToServer(guess);
+                    }
                 }
                 break;
 
@@ -187,7 +202,7 @@ public class CLIHandler extends Thread {
                 if (tokens.length < 2) { printUsage("winner <nom_joueur>"); break; }
                 P2PManager p2pW = client.getP2PManager();
                 if (p2pW != null) {
-                    p2pW.broadcast("GG|WINNER|" + tokens[1]);
+                    p2pW.announceWinner(tokens[1]);
                 }
                 break;
 

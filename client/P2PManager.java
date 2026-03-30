@@ -5,7 +5,6 @@ import common.CommandType;
 import common.DebugLogger;
 import common.MessageParser;
 import common.ParseException;
-
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -44,6 +43,9 @@ public class P2PManager {
 
     /** ServerSocket P2P — ouvert uniquement si ce client est l'hôte. */
     private ServerSocket p2pServerSocket;
+
+    /** Port d'écoute P2P (0 = non initialisé). */
+    private int listeningPort = 0;
 
     /** Sockets vers chaque pair, indexés par nom de joueur. */
     private final ConcurrentHashMap<String, Socket> peers = new ConcurrentHashMap<>();
@@ -106,7 +108,8 @@ public class P2PManager {
      */
     public void startListening(int port) throws IOException {
         p2pServerSocket = new ServerSocket(port);
-        logger.logEvent("P2PManager : écoute P2P démarrée sur le port " + port);
+        listeningPort = p2pServerSocket.getLocalPort();
+        logger.logEvent("P2PManager : écoute P2P démarrée sur le port " + listeningPort);
 
         Thread acceptThread = new Thread(() -> {
             while (!p2pServerSocket.isClosed()) {
@@ -201,6 +204,10 @@ public class P2PManager {
      * @param colorNames liste de 4 noms de couleurs en String
      */
     public void sendGuess(List<String> colorNames) {
+        if (gameEngine.isGameOver()) {
+            logger.logEvent("P2PManager : tentative de guess ignorée car partie terminée.");
+            return;
+        }
         if (colorNames == null || colorNames.size() != GameEngine.COMBINATION_SIZE) {
             logger.logError("P2PManager : sendGuess — liste invalide (" + colorNames + ")");
             return;
@@ -264,6 +271,11 @@ public class P2PManager {
      * @param correctPositions nombre de positions correctes
      */
     public void sendFeedback(int correctColors, int correctPositions) {
+        if (!gameEngine.isSecretOwner()) {
+            logger.logError("P2PManager : seuls le propriétaire du secret peut envoyer le feedback.");
+            return;
+        }
+
         Feedback feedback = new Feedback(correctColors, correctPositions);
         String msg = feedback.toGGString();
         logger.logOutgoingRaw(msg);
@@ -271,11 +283,28 @@ public class P2PManager {
         // Diffusion à tous (on ne sait pas qui a posé la question depuis le CLI)
         broadcast(msg);
 
-        // Si victoire, diffuser WINNER
+        // Si victoire, diffuser WINNER et GAME_OVER
         if (feedback.isWin()) {
-            // Hypothèse : on diffuse WINNER sans nom précis depuis le CLI
-            broadcast("GG|WINNER|" + playerName);
+            String winner = playerName;
+            broadcast(MessageParser.serialize(CommandType.WINNER, winner));
+            broadcast(MessageParser.serialize(CommandType.GAME_OVER, "WIN", winner));
+            gameEngine.setGameOver(true);
         }
+    }
+
+    /**
+     * Annonce le gagnant (WINNER). Seul le propriétaire du secret peut le déclarer.
+     * @param winnerName nom du joueur gagnant.
+     */
+    public void announceWinner(String winnerName) {
+        if (!gameEngine.isSecretOwner()) {
+            logger.logError("P2PManager : seuls le propriétaire du secret peut annoncer le gagnant.");
+            return;
+        }
+
+        String msg = MessageParser.serialize(CommandType.WINNER, winnerName);
+        logger.logOutgoingRaw(msg);
+        broadcast(msg);
     }
 
     /**
@@ -292,6 +321,8 @@ public class P2PManager {
         if (feedback.isWin()) {
             String winnerMsg = MessageParser.serialize(CommandType.WINNER, guesserName);
             broadcast(winnerMsg);
+            broadcast(MessageParser.serialize(CommandType.GAME_OVER, "WIN", guesserName));
+            gameEngine.setGameOver(true);
         }
     }
 
@@ -390,4 +421,5 @@ public class P2PManager {
     public GameEngine getGameEngine()        { return gameEngine; }
     public String     getPlayerName()        { return playerName; }
     public String     getCurrentSecretOwner(){ return currentSecretOwner; }
+    public int        getListeningPort()     { return listeningPort; }
 }

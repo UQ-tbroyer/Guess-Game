@@ -2,7 +2,6 @@ package client;
 
 import common.Color;
 import common.DebugLogger;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +39,9 @@ public class GameEngine {
     /** Vrai si ce client détient la combinaison secrète cette manche. */
     private boolean isSecretOwner;
 
+    /** Vrai si cette manche est terminée (victoire ou échec). */
+    private boolean gameOver;
+
     /** Historique de toutes les propositions de la manche courante. */
     private final List<GuessRecord> guessHistory;
 
@@ -53,6 +55,7 @@ public class GameEngine {
         this.secretCombination = null;
         this.attemptsLeft      = 0;
         this.isSecretOwner     = false;
+        this.gameOver         = false;
         this.guessHistory      = new ArrayList<>();
     }
 
@@ -91,6 +94,7 @@ public class GameEngine {
             throw new IllegalArgumentException("Le nombre de tentatives doit être positif.");
         }
         this.attemptsLeft = maxAttempts;
+        this.gameOver = false;
         logger.logEvent("Tentatives configurées : " + maxAttempts);
     }
 
@@ -174,6 +178,15 @@ public class GameEngine {
         // Décrémenter les tentatives (0 si non configuré = illimité)
         if (attemptsLeft > 0) attemptsLeft--;
 
+        // Détecter fin de manche
+        if (correctPositions == COMBINATION_SIZE) {
+            gameOver = true;
+            logger.logEvent("GameEngine : victoire déclarée pour " + playerName + ".");
+        } else if (attemptsLeft == 0) {
+            gameOver = true;
+            logger.logEvent("GameEngine : plus de tentatives, manche terminée.");
+        }
+
         return new Feedback(correctColors, correctPositions);
     }
 
@@ -199,6 +212,8 @@ public class GameEngine {
 
     public boolean isSecretOwner()             { return isSecretOwner; }
     public int getAttemptsLeft()               { return attemptsLeft; }
+    public boolean isGameOver()                { return gameOver; }
+    public void setGameOver(boolean gameOver)  { this.gameOver = gameOver; }
 
     /** Retourne une copie défensive de l'historique. */
     public List<GuessRecord> getGuessHistory() { return new ArrayList<>(guessHistory); }

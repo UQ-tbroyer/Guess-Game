@@ -5,7 +5,6 @@ import common.DebugLogger;
 import common.Message;
 import common.MessageParser;
 import common.ParseException;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -213,8 +212,21 @@ public class ClientHandler implements Runnable {
             return;
         }
 
+        // Port P2P optionnel (4e champ)
+        int p2pPort = 0;
+        if (msg.getFieldCount() >= 4) {
+            try {
+                p2pPort = Integer.parseInt(msg.getField(3));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
         // L'admin rejoint automatiquement sa salle
-        room.addPlayer(playerName, clientIp);
+        if (p2pPort > 0) {
+            room.addPlayer(playerName, clientIp, p2pPort);
+        } else {
+            room.addPlayer(playerName, clientIp);
+        }
         currentRoom = roomName;
 
         send(MessageParser.serialize(CommandType.ROOM_CREATED, roomName));
@@ -434,9 +446,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        // TODO (Thomas) : créer une GameSession côté serveur pour cette partie solo
-        // GameSession session = new GameSession(playerName, maxAttempts);
-        // session.start();
+        GameSession session = server.createSoloSession(playerName, maxAttempts);
+        if (session == null) {
+            sendError("Une partie solo est déjà en cours pour ce joueur.");
+            return;
+        }
 
         send(MessageParser.serialize(CommandType.SERVER_GAME_STARTED,
                 String.valueOf(maxAttempts)));
@@ -452,15 +466,53 @@ public class ClientHandler implements Runnable {
      * La logique de feedback est déléguée à GameSession (Thomas).
      */
     private void onGuess(Message msg) {
-        // TODO (Thomas) : récupérer la GameSession de ce joueur et calculer le feedback
-        // GameSession session = activeServerSessions.get(playerName);
-        // if (session == null) { sendError("Aucune partie en cours."); return; }
-        // Feedback fb = session.checkGuess(msg);
-        // send(fb.toGGString());
+        try {
+            msg.requireFields(GameSession.COMBO_SIZE);
+        } catch (ParseException e) {
+            sendError("GUESS requiert " + GameSession.COMBO_SIZE + " couleurs.");
+            return;
+        }
 
-        // Placeholder : on répond avec un feedback fictif pour que le client ne bloque pas
-        logger.logEvent("GUESS reçu de " + playerName + " (mode solo — délégué à GameSession).");
-        send("GG|FEEDBACK|0|0"); // Remplacé quand GameSession est intégrée
+        GameSession session = server.getSoloSession(playerName);
+        if (session == null) {
+            sendError("Aucune partie solo en cours.");
+            return;
+        }
+        if (session.isFinished()) {
+            sendError("La partie solo est déjà terminée.");
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        try {
+            java.util.List<common.Color> guess = new java.util.ArrayList<>();
+            for (int i = 0; i < GameSession.COMBO_SIZE; i++) {
+                guess.add(common.Color.fromString(msg.getField(i)));
+            }
+
+            GameSession.Feedback feedback = session.checkGuess(guess, playerName);
+
+            send(MessageParser.serialize(common.CommandType.FEEDBACK,
+                    String.valueOf(feedback.getCorrectColors()),
+                    String.valueOf(feedback.getCorrectPositions())));
+
+            if (feedback.isWin()) {
+                send(MessageParser.serialize(common.CommandType.WINNER, playerName));
+            send(MessageParser.serialize(common.CommandType.GAME_OVER, "WIN", playerName));
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        if (session.isFinished()) {
+            // Partie perdue (tentatives épuisées)
+            send(MessageParser.serialize(common.CommandType.GAME_OVER, "LOSE", "NONE"));
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        } catch (common.ParseException e) {
+            sendError("Couleur invalide dans GUESS : " + e.getMessage());
+        }
     }
 
     // -------------------------------------------------------------------------
