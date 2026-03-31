@@ -1,7 +1,6 @@
 package server;
 
 import common.DebugLogger;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -86,6 +85,21 @@ public class Room {
     }
 
     /**
+     * Met à jour l'adresse P2P d'un joueur existant dans la salle.
+     */
+    public synchronized boolean setPlayerAddress(String playerName, String p2pAddress) {
+        if (!containsPlayer(playerName)) {
+            return false;
+        }
+        if (p2pAddress != null && !p2pAddress.isBlank()) {
+            playerAddresses.put(playerName, p2pAddress);
+        } else {
+            playerAddresses.remove(playerName);
+        }
+        return true;
+    }
+
+    /**
      * Ajoute un joueur avec IP et port séparés.
      */
     public synchronized boolean addPlayer(String playerName, String ip, int port) {
@@ -93,10 +107,10 @@ public class Room {
     }
 
     public synchronized void removePlayer(String playerName) {
-        players.removeIf(h -> h.getPlayerName().equals(playerName));
-        playerAddresses.remove(playerName);
+        players.removeIf(h -> h.getPlayerName().equalsIgnoreCase(playerName));
+        playerAddresses.keySet().removeIf(key -> key.equalsIgnoreCase(playerName));
 
-        if (playerName.equals(adminName) && !players.isEmpty()) {
+        if (playerName.equalsIgnoreCase(adminName) && !players.isEmpty()) {
             adminName = players.get(0).getPlayerName();
             DebugLogger.getInstance().logEvent(
                     "Salle [" + name + "] : nouvel admin → " + adminName
@@ -199,8 +213,9 @@ public class Room {
     }
 
     public boolean containsPlayer(String playerName) {
+        if (playerName == null) return false;
         for (ClientHandler h : players) {
-            if (h.getPlayerName().equals(playerName)) return true;
+            if (h.getPlayerName().equalsIgnoreCase(playerName)) return true;
         }
         return false;
     }
@@ -251,7 +266,7 @@ public class Room {
 
     public ClientHandler findPlayer(String playerName) {
         for (ClientHandler h : players) {
-            if (h.getPlayerName().equals(playerName)) return h;
+            if (h.getPlayerName().equalsIgnoreCase(playerName)) return h;
         }
         return null;
     }

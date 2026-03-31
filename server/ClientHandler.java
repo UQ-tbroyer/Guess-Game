@@ -206,6 +206,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
+        if (currentRoom != null) {
+            sendError("Vous êtes déjà dans la salle '" + currentRoom + "'. Quittez-la avant d'en créer une nouvelle.");
+            return;
+        }
+
         Room room = server.createRoom(roomName, maxPlayers, maxAttempts, playerName);
         if (room == null) {
             sendError("Une salle nommée '" + roomName + "' existe déjà.");
@@ -221,12 +226,11 @@ public class ClientHandler implements Runnable {
             }
         }
 
-        // L'admin rejoint automatiquement sa salle
+        // L'admin est déjà dans la salle (ajouté par Room constructor), on met juste à jour l'adresse P2P.
         if (p2pPort > 0) {
-            room.addPlayer(playerName, clientIp, p2pPort);
-        } else {
-            room.addPlayer(playerName, clientIp);
+            room.setPlayerAddress(playerName, clientIp + ":" + p2pPort);
         }
+
         currentRoom = roomName;
 
         send(MessageParser.serialize(CommandType.ROOM_CREATED, roomName));
@@ -266,6 +270,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
+        if (currentRoom != null && !currentRoom.equals(roomName)) {
+            sendError("Vous devez d'abord quitter la salle '" + currentRoom + "' avant d'en rejoindre une autre.");
+            return;
+        }
+
         if (!permissions.canJoin(room, playerName)) {
             if (permissions.isBanned(playerName)) {
                 sendError("Vous êtes banni de ce serveur.");
@@ -289,7 +298,24 @@ public class ClientHandler implements Runnable {
             } catch (NumberFormatException ignored) {}
         }
 
-        room.addPlayer(playerName, clientIp, p2pPort);
+        ClientHandler targetHandler = server.getClient(playerName);
+        if (targetHandler == null) {
+            sendError("Impossible de retrouver le client '" + playerName + "'.");
+            return;
+        }
+
+        boolean joined;
+        if (p2pPort > 0) {
+            joined = room.addPlayer(targetHandler, clientIp + ":" + p2pPort);
+        } else {
+            joined = room.addPlayer(targetHandler, clientIp);
+        }
+
+        if (!joined) {
+            sendError("Impossible de rejoindre la salle '" + roomName + "'.");
+            return;
+        }
+
         currentRoom = roomName;
 
         // Notifier les autres joueurs de la salle

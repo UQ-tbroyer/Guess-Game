@@ -89,6 +89,8 @@ public class CLIHandler extends Thread {
             case "connect":
                 // Usage : connect <ip> <port> <playerName>
                 if (tokens.length < 4) { printUsage("connect <ip> <port> <playerName>"); break; }
+                client.setPlayerName(tokens[3]);
+                client.setConnected(false);
                 client.connect(tokens[1], tokens[2], Integer.parseInt(tokens[2]));
                 break;
 

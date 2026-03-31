@@ -100,7 +100,18 @@ public class GGServer {
         }));
     }
 
-    public boolean registerClient(String playerName, ClientHandler handler) {
+    public synchronized boolean registerClient(String playerName, ClientHandler handler) {
+        if (playerName == null || playerName.isBlank() || handler == null) {
+            return false;
+        }
+
+        // Ne pas autoriser deux joueurs avec le même nom (cas in-sensible aussi)
+        for (String existingName : connectedClients.keySet()) {
+            if (existingName.equalsIgnoreCase(playerName)) {
+                return false;
+            }
+        }
+
         return connectedClients.putIfAbsent(playerName, handler) == null;
     }
 
@@ -114,7 +125,13 @@ public class GGServer {
     }
 
     public boolean isNameTaken(String playerName) {
-        return connectedClients.containsKey(playerName);
+        if (playerName == null) return false;
+        for (String existingName : connectedClients.keySet()) {
+            if (existingName.equalsIgnoreCase(playerName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Room createRoom(String roomName, int maxPlayers, int maxAttempts, String adminName) {

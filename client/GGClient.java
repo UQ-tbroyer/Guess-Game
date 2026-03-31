@@ -23,6 +23,7 @@ public class GGClient {
     private int serverPort;
     private Socket serverSocket;
     private String playerName;
+    private boolean connected = false;
 
     private P2PManager p2pManager;
     private CLIHandler cliHandler;
@@ -130,7 +131,25 @@ public class GGClient {
 
     // ── Getters ─────────────────────────────────────────────────────────────
 
-    public String     getPlayerName()      { return playerName;  }
+    public String getPlayerName() {
+        if (!connected || playerName == null || playerName.isBlank()) {
+            return "[NON_CONNECTE]";
+        }
+        return playerName;
+    }
+
+    public void setPlayerName(String playerName) {
+        this.playerName = playerName;
+    }
+
+    public boolean isConnected() {
+        return connected;
+    }
+
+    public void setConnected(boolean connected) {
+        this.connected = connected;
+    }
+
     public P2PManager getP2PManager()      { return p2pManager;  }
     public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
     public CLIHandler getCLIHandler()      { return cliHandler;  }

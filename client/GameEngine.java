@@ -80,7 +80,8 @@ public class GameEngine {
         }
         this.secretCombination = new ArrayList<>(combo);
         this.isSecretOwner     = true;
-        logger.logEvent("Secret défini par ce client : " + getSecretAsString());
+        logger.logEvent("Secret défini par ce client (valeur masquée pour éviter fuite).\n" +
+                "Attention : ne jamais exposer la combinaison secrète aux autres joueurs.");
     }
 
     /**
@@ -219,16 +220,11 @@ public class GameEngine {
     public List<GuessRecord> getGuessHistory() { return new ArrayList<>(guessHistory); }
 
     /**
-     * Retourne le secret sous forme lisible pour les traces.
-     * NE PAS envoyer sur le réseau.
+     * Retourne un texte indicatif à usage débogage local uniquement.
+     * Le secret n'est jamais exposé en clair ici pour éviter toute fuite accidentelle.
      */
     public String getSecretAsString() {
         if (secretCombination == null) return "[aucun secret défini]";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < secretCombination.size(); i++) {
-            if (i > 0) sb.append("|");
-            sb.append(secretCombination.get(i).name());
-        }
-        return sb.toString();
+        return "[secret masqué]";
     }
 }

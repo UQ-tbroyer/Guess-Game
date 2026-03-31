@@ -102,6 +102,11 @@ public class ServerListener extends Thread {
                 onConnected(parts);
                 break;
 
+            case "ERROR":
+                // GG|ERROR|raison
+                onError(parts);
+                break;
+
             // ── Salles ──────────────────────────────────────────────────
             case "ROOM_CREATED":
                 // GG|ROOM_CREATED|nom_salle
@@ -170,7 +175,24 @@ public class ServerListener extends Thread {
     private void onConnected(String[] parts) {
         String name = (parts.length > 2) ? parts[2] : "?";
         System.out.println("[ServerListener] Connexion confirmée pour : " + name);
+        client.setPlayerName(name);
+        client.setConnected(true);
+
         // Notifie le CLIHandler pour afficher l'invite principale
+        CLIHandler cli = client.getCLIHandler();
+        if (cli != null) cli.printPrompt();
+    }
+
+    /** Le serveur signale une erreur. */
+    private void onError(String[] parts) {
+        String reason = (parts.length > 2) ? parts[2] : "raison inconnue";
+        System.out.println("[ServerListener] ERREUR serveur : " + reason);
+
+        if (!client.isConnected()) {
+            client.setPlayerName("[NON_CONNECTE]");
+            client.setConnected(false);
+        }
+
         CLIHandler cli = client.getCLIHandler();
         if (cli != null) cli.printPrompt();
     }
