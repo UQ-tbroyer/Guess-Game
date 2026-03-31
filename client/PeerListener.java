@@ -233,4 +233,9 @@ public class PeerListener extends Thread {
     }
 
     public String getPeerName() { return peerName; }
+
+    public void setPeerName(String name) {
+        this.peerName = name;
+        logger.logEvent("PeerListener : pair identifié comme " + name);
+    }
 }

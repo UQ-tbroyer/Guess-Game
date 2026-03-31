@@ -197,7 +197,18 @@ public class CLIHandler extends Thread {
                 if (p2pG != null) {
                     p2pG.sendGuess(java.util.Arrays.asList(
                             tokens[1], tokens[2], tokens[3], tokens[4]));
-                } else {
+                }
+                String secretOwner = p2pG.getCurrentSecretOwner();
+                if (secretOwner == null) {
+                    System.out.println("Aucune partie en cours (détenteur du secret inconnu).");
+                    break;
+                }
+                if (secretOwner.equals(client.getPlayerName())) {
+                    System.out.println("Vous êtes le détenteur du secret, vous ne pouvez pas deviner.");
+                    break;
+                }
+
+                else {
                     client.sendToServer(guess); // Fallback : partie contre serveur
                 }
                 break;

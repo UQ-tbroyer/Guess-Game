@@ -1,3 +1,4 @@
+
 package client;
 
 import common.Color;
@@ -168,6 +169,9 @@ public class P2PManager {
                 peers.put(peerName, socket);
                 logger.logEvent("P2PManager : connecté au pair " + peerName + " (" + ip + ":" + port + ")");
                 PeerListener listener = new PeerListener(socket, this, gameEngine);
+
+                // IMPORTANT: Définir le nom du pair immédiatement
+                listener.setPeerName(peerName);
                 peerListeners.add(listener);
                 listener.start();
             } catch (IOException e) {
@@ -266,6 +270,7 @@ public class P2PManager {
      * @param correctColors    nombre de couleurs correctes mal placées
      * @param correctPositions nombre de positions correctes
      */
+
     public void sendFeedback(int correctColors, int correctPositions) {
         Feedback feedback = new Feedback(correctColors, correctPositions);
         String msg = feedback.toGGString();
@@ -335,10 +340,22 @@ public class P2PManager {
      * Enregistre le socket d'un pair identifié par son nom.
      * Appelé par PeerListener quand il identifie le pair depuis le premier message.
      */
+    /*
     public void registerPeer(String peerName, Socket peerSocket) {
         peers.put(peerName, peerSocket);
         logger.logEvent("P2PManager : pair enregistré : " + peerName);
+    }*/
+    public void registerPeer(String peerName, Socket peerSocket) {
+        // Éviter de s'enregistrer soi-même ou d'enregistrer un nom nul
+        if (peerName == null || peerName.equals(this.playerName)) return;
+
+        // On n'ajoute que si le pair n'est pas déjà connu ou si l'ancien socket est fermé
+        if (!peers.containsKey(peerName) || peers.get(peerName).isClosed()) {
+            peers.put(peerName, peerSocket);
+            logger.logEvent("P2PManager : pair enregistré et disponible pour broadcast : " + peerName);
+        }
     }
+
 
     /**
      * Met à jour le détenteur du secret courant.
@@ -377,6 +394,8 @@ public class P2PManager {
         logger.logEvent("P2PManager : toutes les connexions P2P fermées.");
     }
 
+
+
     // -------------------------------------------------------------------------
     // Méthode interne
     // -------------------------------------------------------------------------
@@ -409,3 +428,4 @@ public class P2PManager {
             : 0;
     }
 }
+
