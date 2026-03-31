@@ -1,5 +1,7 @@
 package client;
 
+import common.Color;
+import common.ParseException;
 import java.util.Scanner;
 
 /**
@@ -155,13 +157,33 @@ public class CLIHandler extends Thread {
 
             // ── Messages de jeu P2P ──────────────────────────────────────
             case "secret":
-                // Annonce que ce joueur possède le secret
-                // Usage : secret
-                P2PManager p2p = client.getP2PManager();
-                if (p2p != null) {
-                    p2p.broadcast("GG|SECRET_SET|" + client.getPlayerName());
-                } else {
+                // Usage : secret <c1> <c2> <c3> <c4>
+                // Ex : secret RED GREEN BLUE YELLOW
+                P2PManager p2pSec = client.getP2PManager();
+                if (p2pSec == null) {
                     System.out.println("[CLIHandler] P2PManager non initialisé.");
+                    break;
+                }
+
+                if (tokens.length == 1) {
+                    // Annonce l'auteur (format existant) sans définir de combinaison
+                    p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+                } else if (tokens.length == GameEngine.COMBINATION_SIZE + 1) {
+                    try {
+                        java.util.List<Color> combo = new java.util.ArrayList<>();
+                        for (int i = 1; i <= GameEngine.COMBINATION_SIZE; i++) {
+                            combo.add(Color.fromString(tokens[i]));
+                        }
+                        p2pSec.setSecret(combo);
+                        p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+                        System.out.println("[CLIHandler] Secret défini. Envoyé aux pairs.");
+                    } catch (ParseException e) {
+                        System.out.println("[CLIHandler] Couleur invalide : " + e.getMessage());
+                    } catch (IllegalStateException | IllegalArgumentException e) {
+                        System.out.println("[CLIHandler] Erreur définition secret : " + e.getMessage());
+                    }
+                } else {
+                    printUsage("secret <c1> <c2> <c3> <c4> (couleurs : RED, GREEN, BLUE, YELLOW, ORANGE)");
                 }
                 break;
 
@@ -257,7 +279,7 @@ public class CLIHandler extends Thread {
         System.out.println("╠══════════════════════════════════════════════════════════╣");
         System.out.println("║  JEU (P2P)                                               ║");
         System.out.println("║    playserver <tentatives>    Jouer contre le serveur    ║");
-        System.out.println("║    secret                     Annoncer son secret        ║");
+        System.out.println("║    secret <c1> <c2> <c3> <c4>   Définir/annoncer son secret ║");
         System.out.println("║    guess  <c1> <c2> <c3> <c4> Proposer une combinaison v ║");
         System.out.println("║      Couleurs : RED GREEN BLUE YELLOW ORANGE             ║");
         System.out.println("║    feedback <couleurs> <pos>   Donner le feedback        ║");

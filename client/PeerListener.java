@@ -113,6 +113,7 @@ public class PeerListener extends Thread {
             case GUESS      -> onGuess(msg);
             case FEEDBACK   -> onFeedback(msg);
             case WINNER     -> onWinner(msg);
+            case GAME_OVER  -> onGameOver(msg);
             case NEW_GAME   -> onNewGame(msg);
             default         -> logger.logError(
                     "PeerListener : commande P2P inattendue : " + msg.getCommand());
@@ -136,10 +137,27 @@ public class PeerListener extends Thread {
             if (peerName == null) {
                 peerName = owner;
                 p2pManager.registerPeer(peerName, peerSocket);
+            } else if (!peerName.equals(owner)) {
+                // on peut garder l'ancien id (peut être le nom réel), mais on log l'anomalie
+                logger.logEvent("PeerListener : SECRET_SET reçu de " + owner + " alors qu'on attendait " + peerName);
+            }
+
+            // Si un secret est déjà défini et la manche n'est pas terminée, ignorer la mise à jour
+            if (p2pManager.getCurrentSecretOwner() != null && !gameEngine.isGameOver()
+                    && !p2pManager.getCurrentSecretOwner().equals(owner)) {
+                logger.logEvent("PeerListener : SECRET_SET ignoré car secret déjà défini par "
+                        + p2pManager.getCurrentSecretOwner());
+                return;
             }
 
             // Informe P2PManager du détenteur pour le routage de sendGuess()
             p2pManager.setCurrentSecretOwner(owner);
+
+            if (owner.equals(p2pManager.getPlayerName())) {
+                System.out.println("[PeerListener] Secret défini : vous êtes le détenteur du secret.");
+            } else {
+                System.out.println("[PeerListener] Secret défini par " + owner + ". Vous devez deviner.");
+            }
 
             logger.logEvent("Détenteur du secret : " + owner
                     + (owner.equals(p2pManager.getPlayerName()) ? " (ce client)" : ""));
@@ -170,7 +188,17 @@ public class PeerListener extends Thread {
                 guess.add(Color.fromString(msg.getField(i)));
             }
 
-            String guesser = (peerName != null) ? peerName : "inconnu";
+            String guesser = peerName;
+            if (guesser == null) {
+                guesser = p2pManager.getPeerNameBySocket(peerSocket);
+                if (guesser != null) {
+                    peerName = guesser;
+                }
+            }
+            if (guesser == null) {
+                guesser = "inconnu";
+            }
+
             Feedback feedback = gameEngine.checkGuess(guess, guesser);
 
             logger.logEvent("Feedback pour " + guesser + " : " + feedback);
@@ -216,6 +244,34 @@ public class PeerListener extends Thread {
             logger.logEvent("PeerListener : manche terminée suite à WINNER.");
         } catch (ParseException e) {
             logger.logError("PeerListener : WINNER mal formé.", e);
+        }
+    }
+
+    /**
+     * GG|GAME_OVER|WIN|joueur ou GG|GAME_OVER|LOSE|NONE
+     */
+    private void onGameOver(Message msg) {
+        try {
+            String[] fields = msg.getFields().toArray(new String[0]);
+            String result = (fields.length > 0) ? fields[0] : "UNKNOWN";
+            String winner = (fields.length > 1) ? fields[1] : "NONE";
+
+            if ("WIN".equalsIgnoreCase(result)) {
+                System.out.println("[PeerListener] Partie terminée : victoire de " + winner + " !");
+            } else if ("LOSE".equalsIgnoreCase(result)) {
+                System.out.println("[PeerListener] Partie terminée : défaite (pas de gagnant)." );
+            } else {
+                System.out.println("[PeerListener] Partie terminée : résultat inconnu.");
+            }
+
+            gameEngine.setGameOver(true);
+            logger.logEvent("PeerListener : manche terminée (GAME_OVER). result=" + result + " winner=" + winner);
+
+            // Notifie le serveur que la partie est bien terminée (pour libérer la room)
+            p2pManager.notifyServerGameOver(result, winner);
+
+        } catch (Exception e) {
+            logger.logError("PeerListener : GAME_OVER mal formé.", e);
         }
     }
 

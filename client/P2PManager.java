@@ -59,6 +59,12 @@ public class P2PManager {
     /** Nom de ce client (pour construire les messages GG). */
     private final String playerName;
 
+    /** Référence optionnelle au client principal pour notifier le serveur. */
+    private final GGClient client;
+
+    /** Indicateur si GAME_OVER a été signalé au serveur pour cette manche. */
+    private boolean gameOverReportedToServer = false;
+
     /**
      * Nom du détenteur du secret pour la manche courante.
      * Mis à jour par PeerListener à la réception de SECRET_SET.
@@ -78,8 +84,15 @@ public class P2PManager {
      * @param playerName nom de ce client sur le réseau
      */
     public P2PManager(String playerName) {
-        this.playerName  = playerName;
-        this.gameEngine  = new GameEngine();
+        this.playerName = playerName;
+        this.gameEngine = new GameEngine();
+        this.client     = null;
+    }
+
+    public P2PManager(String playerName, GGClient client) {
+        this.playerName = playerName;
+        this.gameEngine = new GameEngine();
+        this.client     = client;
     }
 
     /**
@@ -92,6 +105,7 @@ public class P2PManager {
     public P2PManager(String playerName, GameEngine gameEngine) {
         this.playerName = playerName;
         this.gameEngine = gameEngine;
+        this.client     = null;
     }
 
     // -------------------------------------------------------------------------
@@ -289,6 +303,13 @@ public class P2PManager {
             broadcast(MessageParser.serialize(CommandType.WINNER, winner));
             broadcast(MessageParser.serialize(CommandType.GAME_OVER, "WIN", winner));
             gameEngine.setGameOver(true);
+            return;
+        }
+
+        // Si la manche est terminée sans victoire (tentatives épuisées), finir la partie.
+        if (gameEngine.isGameOver()) {
+            broadcast(MessageParser.serialize(CommandType.GAME_OVER, "LOSE", "NONE"));
+            return;
         }
     }
 
@@ -323,6 +344,8 @@ public class P2PManager {
             broadcast(winnerMsg);
             broadcast(MessageParser.serialize(CommandType.GAME_OVER, "WIN", guesserName));
             gameEngine.setGameOver(true);
+            logger.logEvent("P2PManager : partie terminée, gagnant = " + guesserName);
+            System.out.println("[P2PManager] Partie finie ! Gagnant : " + guesserName);
         }
     }
 
@@ -343,7 +366,24 @@ public class P2PManager {
     public void resetForNewGame() {
         gameEngine.reset();
         currentSecretOwner = null;
+        gameOverReportedToServer = false;
         logger.logEvent("P2PManager : réinitialisé pour nouvelle manche.");
+    }
+
+    /**
+     * Notifie le serveur de la fin de la partie P2P (GAME_OVER).
+     */
+    public void notifyServerGameOver(String result, String winner) {
+        if (client == null) {
+            logger.logEvent("P2PManager : aucun client pour notifier le serveur de la fin de partie.");
+            return;
+        }
+        if (gameOverReportedToServer) {
+            return;
+        }
+        client.sendToServer(MessageParser.serialize(common.CommandType.GAME_OVER, result, winner));
+        gameOverReportedToServer = true;
+        logger.logEvent("P2PManager : GAME_OVER notifié au serveur (" + result + ", " + winner + ").");
     }
 
     // -------------------------------------------------------------------------
@@ -360,14 +400,51 @@ public class P2PManager {
     }
 
     /**
+     * Retourne le nom du pair correspondant à un socket, si connu.
+     */
+    public String getPeerNameBySocket(Socket socket) {
+        if (socket == null) return null;
+        for (Map.Entry<String, Socket> entry : peers.entrySet()) {
+            if (entry.getValue().equals(socket)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Met à jour le détenteur du secret courant.
      * Appelé par PeerListener à la réception de SECRET_SET.
      *
      * @param ownerName nom du joueur qui détient le secret
      */
     public void setCurrentSecretOwner(String ownerName) {
+        if (currentSecretOwner != null && !gameEngine.isGameOver() && !currentSecretOwner.equals(ownerName)) {
+            logger.logEvent("P2PManager : tentative de nouveau SECRET_SET ignorée (" + ownerName + ", déjà " + currentSecretOwner + ").");
+            return;
+        }
         this.currentSecretOwner = ownerName;
         logger.logEvent("P2PManager : détenteur du secret mis à jour : " + ownerName);
+    }
+
+    /**
+     * Définit la combinaison secrète localement pour ce client.
+     * Le client doit être le donneur de secret.
+     */
+    public void setSecret(java.util.List<Color> combo) {
+        if (combo == null || combo.size() != GameEngine.COMBINATION_SIZE) {
+            throw new IllegalArgumentException("La combinaison doit contenir exactement " + GameEngine.COMBINATION_SIZE + " couleurs.");
+        }
+        if (gameEngine.isGameOver()) {
+            throw new IllegalStateException("La partie est terminée, vous ne pouvez pas (re)définir un secret.");
+        }
+        if (gameEngine.isSecretOwner() && !gameEngine.isGameOver()) {
+            throw new IllegalStateException("Secret déjà défini pour cette manche. Attendez NEW_GAME.");
+        }
+
+        gameEngine.setSecret(combo);
+        currentSecretOwner = playerName;
+        logger.logEvent("P2PManager : secret local défini par " + playerName + " (combinaison masquée).");
     }
 
     // -------------------------------------------------------------------------

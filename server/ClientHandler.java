@@ -129,6 +129,7 @@ public class ClientHandler implements Runnable {
             case KICK_PLAYER   -> onKickPlayer(msg);
             case START_GAME    -> onStartGame(msg);
             case PLAY_SERVER   -> onPlayServer(msg);
+            case GAME_OVER     -> onGameOver(msg);
             case GUESS         -> onGuess(msg);
             default            -> sendError("Commande non supportée côté serveur : " + msg.getCommand());
         }
@@ -378,11 +379,9 @@ public class ClientHandler implements Runnable {
         String kickedMsg = MessageParser.serialize(CommandType.PLAYER_KICKED, targetName);
         broadcastToRoom(room, kickedMsg);
 
-        // Retirer le joueur de la salle
-        room.removePlayer(targetName);
+        // Retirer le joueur de la salle en utilisant la méthode dédiée (mise à jour admin, session)
+        ClientHandler targetHandler = room.kickPlayer(targetName);
 
-        // Notifier le joueur expulsé (LEFT_ROOM pour cohérence côté client)
-        ClientHandler targetHandler = server.getClient(targetName);
         if (targetHandler != null) {
             targetHandler.setCurrentRoom(null);
             targetHandler.send(MessageParser.serialize(CommandType.LEFT_ROOM, roomName));
@@ -438,6 +437,14 @@ public class ClientHandler implements Runnable {
                 roomName, room.getGameStartedPayload());
         broadcastToRoom(room, gameStartedMsg);
 
+        // Notifier explicitement l'admin qu'il peut choisir le secret en P2P
+        String adminInfo = "Partie démarrée : vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.";
+        send(MessageParser.serialize(CommandType.INFO, adminInfo));
+
+        // Rafraîchir la salle pour tout le monde, évite que l'admin pense qu'il n'a pas reçu l'info
+        broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
+                "ADMIN: après GAME_STARTED, tapez 'secret c1 c2 c3 c4' pour commencer à recevoir des guesses."));
+
         logger.logEvent("Partie démarrée dans la salle : " + roomName
                 + " | Joueurs : " + room.getPlayersAsString());
     }
@@ -481,6 +488,43 @@ public class ClientHandler implements Runnable {
         send(MessageParser.serialize(CommandType.SERVER_GAME_STARTED,
                 String.valueOf(maxAttempts)));
         logger.logEvent(playerName + " démarre une partie solo (" + maxAttempts + " tentatives).");
+    }
+
+    /**
+     * GG|GAME_OVER|WIN|nom_joueur or GG|GAME_OVER|LOSE|NONE
+     * Signalé par un client pour clore la partie P2P côté serveur.
+     */
+    private void onGameOver(Message msg) {
+        try {
+            msg.requireFields(2);
+            String result = msg.getField(0);
+            String winner = msg.getField(1);
+
+            if (currentRoom == null) {
+                sendError("Aucune salle active pour GAME_OVER.");
+                return;
+            }
+
+            Room room = server.getRoom(currentRoom);
+            if (room == null) {
+                sendError("Salle introuvable : " + currentRoom);
+                return;
+            }
+
+            if (!room.isGameInProgress()) {
+                return;
+            }
+
+            room.setGameInProgress(false);
+            broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
+                    "Partie terminée: " + result + " (" + winner + "). Salle en attente."));
+
+            logger.logEvent("Partie P2P terminée dans la salle " + currentRoom
+                    + " -> result=" + result + " winner=" + winner);
+
+        } catch (ParseException e) {
+            sendError("GAME_OVER requiert : result|winner");
+        }
     }
 
     /**

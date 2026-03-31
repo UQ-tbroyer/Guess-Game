@@ -105,6 +105,13 @@ public enum CommandType {
      */
     GAME_OVER,
 
+    // --- Info / notifications ---
+    /**
+     * Serveur → Client : GG|INFO|message
+     * Message d'information générale affiché au client.
+     */
+    INFO,
+
     // --- Erreur générique ---
     /**
      * Serveur → Client : GG|ERROR|message_erreur

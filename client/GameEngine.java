@@ -75,9 +75,14 @@ public class GameEngine {
                 "La combinaison doit contenir exactement " + COMBINATION_SIZE + " couleurs."
             );
         }
+        if (secretCombination != null && !gameOver) {
+            throw new IllegalStateException("Secret déjà défini pour cette manche. Attendez NEW_GAME.");
+        }
+
         for (Color c : combo) {
             if (c == null) throw new IllegalArgumentException("Une couleur dans la combinaison est null.");
         }
+
         this.secretCombination = new ArrayList<>(combo);
         this.isSecretOwner     = true;
         logger.logEvent("Secret défini par ce client (valeur masquée pour éviter fuite).\n" +

@@ -1,5 +1,6 @@
 package client;
 
+import common.MessageParser;
 import java.io.*;
 import java.net.*;
 
@@ -52,7 +53,7 @@ public class GGClient {
             System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
 
             // Initialisation du gestionnaire P2P
-            p2pManager = new P2PManager(playerName);
+            p2pManager = new P2PManager(playerName, this);
             try {
                 p2pManager.startListening(0); // port dynamique pour P2P
                 System.out.println("[GGClient] P2P écoute sur le port " + p2pManager.getListeningPort());
@@ -155,7 +156,16 @@ public class GGClient {
     public CLIHandler getCLIHandler()      { return cliHandler;  }
     public boolean    isPlayingServerGame() { return playingServerGame; }
     public void       setPlayingServerGame(boolean playing) { playingServerGame = playing; }
-
+    /**
+     * Notifie le serveur de la fin de partie pour la salle courante (P2P).
+     */
+    public void notifyServerGameOver(String result, String winner) {
+        if (serverSocket == null || serverSocket.isClosed()) {
+            System.err.println("[GGClient] Impossible d'envoyer GAME_OVER au serveur : socket fermé.");
+            return;
+        }
+        sendToServer(MessageParser.serialize(common.CommandType.GAME_OVER, result, winner));
+    }
     // ── Point d'entrée ───────────────────────────────────────────────────────
 
     /**

@@ -2,8 +2,6 @@ package server;
 
 import common.Color;
 import common.DebugLogger;
-import common.ParseException;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -131,6 +129,8 @@ public class GameSession {
         this.secretOwner = "SERVER";
         this.status = SessionStatus.IN_PROGRESS;
 
+        String secretText = secretCombination.toString();
+        System.out.println("[GGServer] Session solo démarrée pour " + roomName + " : secret = " + secretText);
         DebugLogger.getInstance().logEvent(
                 "Session [" + sessionId + "] : secret généré par SERVER, statut → IN_PROGRESS"
         );

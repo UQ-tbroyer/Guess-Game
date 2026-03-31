@@ -144,6 +144,11 @@ public class ServerListener extends Thread {
                 onServerGameStarted(parts);
                 break;
 
+            case "INFO":
+                // GG|INFO|message
+                onInfo(parts);
+                break;
+
             case "FEEDBACK":
                 // GG|FEEDBACK|couleurs_correctes|positions_correctes
                 onServerFeedback(parts);
@@ -197,6 +202,12 @@ public class ServerListener extends Thread {
         if (cli != null) cli.printPrompt();
     }
 
+    /** Le serveur envoie un message d'information. */
+    private void onInfo(String[] parts) {
+        String info = (parts.length > 2) ? parts[2] : "(aucune information)";
+        System.out.println("[ServerListener] INFO : " + info);
+    }
+
     /** Le serveur confirme la création d'une salle. */
     private void onRoomCreated(String[] parts) {
         String room = (parts.length > 2) ? parts[2] : "?";
@@ -243,6 +254,17 @@ public class ServerListener extends Thread {
     private void onLeftRoom(String[] parts) {
         String room = (parts.length > 2) ? parts[2] : "?";
         System.out.println("[ServerListener] Vous avez quitté la salle : " + room);
+
+        // Nettoyage post-départ pour éviter rester en état de jeu
+        P2PManager p2p = client.getP2PManager();
+        if (p2p != null) {
+            p2p.close();
+            client.setPlayingServerGame(false);
+            System.out.println("[ServerListener] P2P fermé après sortie de la salle.");
+        }
+
+        CLIHandler cli = client.getCLIHandler();
+        if (cli != null) cli.printPrompt();
     }
 
     /**
@@ -254,6 +276,12 @@ public class ServerListener extends Thread {
         System.out.println("[ServerListener] Joueur expulsé : " + kicked);
         if (kicked.equals(client.getPlayerName())) {
             System.out.println("[ServerListener] Vous avez été expulsé ! Retour au menu principal.");
+            P2PManager p2p = client.getP2PManager();
+            if (p2p != null) {
+                p2p.close();
+                client.setPlayingServerGame(false);
+                System.out.println("[ServerListener] P2P fermé suite à l'expulsion.");
+            }
             CLIHandler cli = client.getCLIHandler();
             if (cli != null) cli.printPrompt();
         }
@@ -268,6 +296,7 @@ public class ServerListener extends Thread {
      */
     private void onGameStarted(String rawMessage) {
         System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
+        System.out.println("[ServerListener] Astuce : si vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.");
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
             // On passe le message brut ; P2PManager extrait les adresses
@@ -331,8 +360,10 @@ public class ServerListener extends Thread {
 
         if ("WIN".equalsIgnoreCase(result)) {
             System.out.println("[ServerListener] Partie terminée : victoire de " + winner);
+            System.out.println("[ServerListener] La partie est terminée. Félicitations !");
         } else if ("LOSE".equalsIgnoreCase(result)) {
             System.out.println("[ServerListener] Partie terminée : défait (pas de gagnant).\n");
+            System.out.println("[ServerListener] La partie est terminée.");
         } else {
             System.out.println("[ServerListener] Partie terminée : résultat inconnu.");
         }
