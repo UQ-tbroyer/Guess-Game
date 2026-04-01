@@ -106,6 +106,11 @@ public class ServerListener extends Thread {
                 onConnected(parts);
                 break;
 
+            case "ERROR":
+                // GG|ERROR|raison
+                onError(parts);
+                break;
+
             // ── Salles ──────────────────────────────────────────────────
             case "ROOM_CREATED":
                 // GG|ROOM_CREATED|nom_salle
@@ -144,9 +149,28 @@ public class ServerListener extends Thread {
                 onServerGameStarted(parts);
                 break;
 
+            case "INFO":
+                // GG|INFO|message
+                onInfo(parts);
+                break;
+
+            case "FEEDBACK":
+                // GG|FEEDBACK|couleurs_correctes|positions_correctes
+                onServerFeedback(parts);
+                break;
+
+            case "WINNER":
+                // GG|WINNER|nom_joueur
+                onServerWinner(parts);
+                break;
+
             // ── Nouveau jeu ──────────────────────────────────────────────
             case "NEW_GAME":
                 onNewGame(parts);
+                break;
+
+            case "GAME_OVER":
+                onGameOver(parts);
                 break;
 
             // ── Cas inconnu ──────────────────────────────────────────────
@@ -161,9 +185,32 @@ public class ServerListener extends Thread {
     private void onConnected(String[] parts) {
         String name = (parts.length > 2) ? parts[2] : "?";
         System.out.println("[ServerListener] Connexion confirmée pour : " + name);
+        client.setPlayerName(name);
+        client.setConnected(true);
+
         // Notifie le CLIHandler pour afficher l'invite principale
         CLIHandler cli = client.getCLIHandler();
         if (cli != null) cli.printPrompt();
+    }
+
+    /** Le serveur signale une erreur. */
+    private void onError(String[] parts) {
+        String reason = (parts.length > 2) ? parts[2] : "raison inconnue";
+        System.out.println("[ServerListener] ERREUR serveur : " + reason);
+
+        if (!client.isConnected()) {
+            client.setPlayerName("[NON_CONNECTE]");
+            client.setConnected(false);
+        }
+
+        CLIHandler cli = client.getCLIHandler();
+        if (cli != null) cli.printPrompt();
+    }
+
+    /** Le serveur envoie un message d'information. */
+    private void onInfo(String[] parts) {
+        String info = (parts.length > 2) ? parts[2] : "(aucune information)";
+        System.out.println("[ServerListener] INFO : " + info);
     }
 
     /** Le serveur confirme la création d'une salle. */
@@ -213,6 +260,17 @@ public class ServerListener extends Thread {
     private void onLeftRoom(String[] parts) {
         String room = (parts.length > 2) ? parts[2] : "?";
         System.out.println("[ServerListener] Vous avez quitté la salle : " + room);
+
+        // Nettoyage post-départ pour éviter rester en état de jeu
+        P2PManager p2p = client.getP2PManager();
+        if (p2p != null) {
+            p2p.close();
+            client.setPlayingServerGame(false);
+            System.out.println("[ServerListener] P2P fermé après sortie de la salle.");
+        }
+
+        CLIHandler cli = client.getCLIHandler();
+        if (cli != null) cli.printPrompt();
     }
 
     /**
@@ -224,6 +282,12 @@ public class ServerListener extends Thread {
         System.out.println("[ServerListener] Joueur expulsé : " + kicked);
         if (kicked.equals(client.getPlayerName())) {
             System.out.println("[ServerListener] Vous avez été expulsé ! Retour au menu principal.");
+            P2PManager p2p = client.getP2PManager();
+            if (p2p != null) {
+                p2p.close();
+                client.setPlayingServerGame(false);
+                System.out.println("[ServerListener] P2P fermé suite à l'expulsion.");
+            }
             CLIHandler cli = client.getCLIHandler();
             if (cli != null) cli.printPrompt();
         }
@@ -239,7 +303,7 @@ public class ServerListener extends Thread {
     private void onGameStarted(String rawMessage) {
     System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
     System.out.println("[ServerListener] Message reçu: " + rawMessage);
-    
+
     P2PManager p2p = client.getP2PManager();
     if (p2p != null) {
         Map<String, String> addresses = parseAddresses(rawMessage);
@@ -257,6 +321,36 @@ public class ServerListener extends Thread {
     private void onServerGameStarted(String[] parts) {
         int attempts = (parts.length > 2) ? Integer.parseInt(parts[2]) : 10;
         System.out.println("[ServerListener] Partie contre le serveur démarrée. Tentatives : " + attempts);
+
+        P2PManager p2p = client.getP2PManager();
+        if (p2p != null) {
+            p2p.getGameEngine().setMaxAttempts(attempts);
+        }
+        client.setPlayingServerGame(true);
+    }
+
+    /**
+     * Feedback de la partie solo (serveur -> client).
+     */
+    private void onServerFeedback(String[] parts) {
+        if (parts.length < 4) {
+            System.err.println("[ServerListener] FEEDBACK mal formé.");
+            return;
+        }
+        System.out.println("[ServerListener] Feedback solo : " + parts[2] + " couleurs correctes, " + parts[3] + " positions correctes.");
+        if (parts.length > 3 && Integer.parseInt(parts[3]) == GameEngine.COMBINATION_SIZE) {
+            System.out.println("[ServerListener] Bravo, vous avez gagné la partie solo !");
+            client.setPlayingServerGame(false);
+        }
+    }
+
+    /**
+     * Annonce du gagnant pour la partie solo (serveur -> client).
+     */
+    private void onServerWinner(String[] parts) {
+        String winner = (parts.length > 2) ? parts[2] : "?";
+        System.out.println("[ServerListener] WINNER : " + winner);
+        client.setPlayingServerGame(false);
     }
 
     /** Nouveau jeu dans la salle — réinitialise l'état local. */
@@ -264,6 +358,27 @@ public class ServerListener extends Thread {
         System.out.println("[ServerListener] Nouveau jeu ! Réinitialisation de l'état local.");
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) p2p.resetForNewGame();
+    }
+
+    /**
+     * Partie solo terminée (ou fin de partie en salle si jamais propagated).
+     * GG|GAME_OVER|WIN|joueur ou GG|GAME_OVER|LOSE|NONE
+     */
+    private void onGameOver(String[] parts) {
+        String result = (parts.length > 2) ? parts[2] : "UNKNOWN";
+        String winner = (parts.length > 3) ? parts[3] : "NONE";
+
+        if ("WIN".equalsIgnoreCase(result)) {
+            System.out.println("[ServerListener] Partie terminée : victoire de " + winner);
+            System.out.println("[ServerListener] La partie est terminée. Félicitations !");
+        } else if ("LOSE".equalsIgnoreCase(result)) {
+            System.out.println("[ServerListener] Partie terminée : défait (pas de gagnant).\n");
+            System.out.println("[ServerListener] La partie est terminée.");
+        } else {
+            System.out.println("[ServerListener] Partie terminée : résultat inconnu.");
+        }
+
+        client.setPlayingServerGame(false);
     }
 
     /**
@@ -275,12 +390,12 @@ public class ServerListener extends Thread {
     private Map<String, String> parseAddresses(String rawMessage) {
     Map<String, String> addresses = new HashMap<>();
     String[] parts = rawMessage.split("\\|");
-    
+
     System.out.println("[ServerListener] parseAddresses - parts.length = " + parts.length);
     for (int i = 0; i < parts.length; i++) {
         System.out.println("[ServerListener] parts[" + i + "] = " + parts[i]);
     }
-    
+
     if (parts.length < 4) {
         System.err.println("[ServerListener] parseAddresses - pas assez de champs");
         return addresses;

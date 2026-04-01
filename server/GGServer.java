@@ -22,6 +22,10 @@ public class GGServer {
     private final ConcurrentHashMap<String, Room> rooms =
             new ConcurrentHashMap<>();
 
+    // Sessions solo (PLAY_SERVER) par joueur
+    private final ConcurrentHashMap<String, GameSession> soloSessions =
+            new ConcurrentHashMap<>();
+
     private final PermissionManager permissionManager = new PermissionManager();
 
     private final int port;
@@ -96,7 +100,18 @@ public class GGServer {
         }));
     }
 
-    public boolean registerClient(String playerName, ClientHandler handler) {
+    public synchronized boolean registerClient(String playerName, ClientHandler handler) {
+        if (playerName == null || playerName.isBlank() || handler == null) {
+            return false;
+        }
+
+        // Ne pas autoriser deux joueurs avec le même nom (cas in-sensible aussi)
+        for (String existingName : connectedClients.keySet()) {
+            if (existingName.equalsIgnoreCase(playerName)) {
+                return false;
+            }
+        }
+
         return connectedClients.putIfAbsent(playerName, handler) == null;
     }
 
@@ -110,7 +125,13 @@ public class GGServer {
     }
 
     public boolean isNameTaken(String playerName) {
-        return connectedClients.containsKey(playerName);
+        if (playerName == null) return false;
+        for (String existingName : connectedClients.keySet()) {
+            if (existingName.equalsIgnoreCase(playerName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Room createRoom(String roomName, int maxPlayers, int maxAttempts, String adminName) {
@@ -130,6 +151,25 @@ public class GGServer {
     public void removeRoom(String roomName) {
         rooms.remove(roomName);
         System.out.println("[GGServer] Salle supprimée : " + roomName);
+    }
+
+    public GameSession createSoloSession(String playerName, int maxAttempts) {
+        if (soloSessions.containsKey(playerName)) {
+            return null; // session déjà en cours pour ce joueur
+        }
+        GameSession session = new GameSession(playerName, maxAttempts);
+        session.generateSecret();
+        soloSessions.put(playerName, session);
+        System.out.println("[GGServer] Session solo démarrée pour " + playerName + " (" + maxAttempts + " tentatives)");
+        return session;
+    }
+
+    public GameSession getSoloSession(String playerName) {
+        return soloSessions.get(playerName);
+    }
+
+    public void removeSoloSession(String playerName) {
+        soloSessions.remove(playerName);
     }
 
     public String getRoomListAsString() {

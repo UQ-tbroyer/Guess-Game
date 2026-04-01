@@ -2,9 +2,9 @@ package client;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
-
 import common.Color;
+import common.ParseException;
+import java.util.Scanner;
 
 /**
  * CLIHandler — Thread de l'interface utilisateur en ligne de commande.
@@ -93,6 +93,8 @@ public class CLIHandler extends Thread {
             case "connect":
                 // Usage : connect <ip> <port> <playerName>
                 if (tokens.length < 4) { printUsage("connect <ip> <port> <playerName>"); break; }
+                client.setPlayerName(tokens[3]);
+                client.setConnected(false);
                 client.connect(tokens[1], tokens[2], Integer.parseInt(tokens[2]));
                 break;
 
@@ -107,8 +109,7 @@ public class CLIHandler extends Thread {
             case "create":
                 // Usage : create <nom_salle> <max_joueurs> <max_tentatives>
                 if (tokens.length < 4) { printUsage("create <salle> <maxJoueurs> <maxTentatives>"); break; }
-                //client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3]);
-                client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3] + "|" + client.getP2pPort());
+                client.sendToServer("GG|CREATE_ROOM|" + tokens[1] + "|" + tokens[2] + "|" + tokens[3]+ "|" + client.getP2pPort());
                 break;
 
             case "list":
@@ -116,6 +117,7 @@ public class CLIHandler extends Thread {
                 break;
 
             case "join":
+                // Usage : join <nom_salle>
                 if (tokens.length < 2) { printUsage("join <nom_salle>"); break; }
 
                 if (client.getCurrentRoom() != null) {
@@ -210,6 +212,17 @@ public class CLIHandler extends Thread {
 
                 else {
                     client.sendToServer(guess); // Fallback : partie contre serveur
+
+                if (client.isPlayingServerGame()) {
+                    client.sendToServer(guess);
+                } else {
+                    P2PManager p2pG = client.getP2PManager();
+                    if (p2pG != null) {
+                        p2pG.sendGuess(java.util.Arrays.asList(
+                                tokens[1], tokens[2], tokens[3], tokens[4]));
+                    } else {
+                        client.sendToServer(guess);
+                    }
                 }
                 break;
 
@@ -284,7 +297,7 @@ public class CLIHandler extends Thread {
         System.out.println("╠══════════════════════════════════════════════════════════╣");
         System.out.println("║  JEU (P2P)                                               ║");
         System.out.println("║    playserver <tentatives>    Jouer contre le serveur    ║");
-        System.out.println("║    secret <c1> <c2> <c3> <c4> Définir son secret        ║");
+        System.out.println("║    secret <c1> <c2> <c3> <c4>   Définir/annoncer son secret ║");
         System.out.println("║    guess  <c1> <c2> <c3> <c4> Proposer une combinaison v ║");
         System.out.println("║      Couleurs : RED GREEN BLUE YELLOW ORANGE             ║");
         System.out.println("║    feedback <couleurs> <pos>   Donner le feedback        ║");

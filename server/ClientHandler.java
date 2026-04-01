@@ -130,6 +130,7 @@ public class ClientHandler implements Runnable {
             case KICK_PLAYER   -> onKickPlayer(msg);
             case START_GAME    -> onStartGame(msg);
             case PLAY_SERVER   -> onPlayServer(msg);
+            case GAME_OVER     -> onGameOver(msg);
             case GUESS         -> onGuess(msg);
             default            -> sendError("Commande non supportée côté serveur : " + msg.getCommand());
         }
@@ -211,6 +212,11 @@ public class ClientHandler implements Runnable {
             return;
         }
 
+        if (currentRoom != null) {
+            sendError("Vous êtes déjà dans la salle '" + currentRoom + "'. Quittez-la avant d'en créer une nouvelle.");
+            return;
+        }
+
         Room room = server.createRoom(roomName, maxPlayers, maxAttempts, playerName);
         if (room == null) {
             sendError("Une salle nommée '" + roomName + "' existe déjà.");
@@ -257,6 +263,11 @@ public class ClientHandler implements Runnable {
 
         if (room == null) {
             sendError("La salle '" + roomName + "' n'existe pas.");
+            return;
+        }
+
+        if (currentRoom != null && !currentRoom.equals(roomName)) {
+            sendError("Vous devez d'abord quitter la salle '" + currentRoom + "' avant d'en rejoindre une autre.");
             return;
         }
 
@@ -410,13 +421,13 @@ public class ClientHandler implements Runnable {
 
     // Construction du payload GAME_STARTED
     String payload = room.buildP2PList();
-    
+
     // Log pour déboguer
     logger.logEvent("GAME_STARTED payload: " + payload);
-    
+
     // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
     String gameStartedMsg = "GG|GAME_STARTED|" + roomName + "|" + payload;
-    
+
     // Diffuser à tous les joueurs de la salle
     for (String pName : room.getPlayerNames()) {
         ClientHandler handler = server.getClient(pName);
@@ -426,9 +437,17 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    logger.logEvent("Partie démarrée dans la salle : " + roomName
-            + " | Joueurs : " + room.getPlayersAsString());
-}
+        // Notifier explicitement l'admin qu'il peut choisir le secret en P2P
+        String adminInfo = "Partie démarrée : vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.";
+        send(MessageParser.serialize(CommandType.INFO, adminInfo));
+
+        // Rafraîchir la salle pour tout le monde, évite que l'admin pense qu'il n'a pas reçu l'info
+        broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
+                "ADMIN: après GAME_STARTED, tapez 'secret c1 c2 c3 c4' pour commencer à recevoir des guesses."));
+
+        logger.logEvent("Partie démarrée dans la salle : " + roomName
+                + " | Joueurs : " + room.getPlayersAsString());
+    }
 
     /**
      * GG|PLAY_SERVER|max_tentatives
@@ -460,14 +479,52 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        // TODO (Thomas) : créer une GameSession côté serveur pour cette partie solo
-        //GameSession session = new GameSession(playerName, maxAttempts);
-        //session.start();
-        //------------------------
+        GameSession session = server.createSoloSession(playerName, maxAttempts);
+        if (session == null) {
+            sendError("Une partie solo est déjà en cours pour ce joueur.");
+            return;
+        }
 
         send(MessageParser.serialize(CommandType.SERVER_GAME_STARTED,
                 String.valueOf(maxAttempts)));
         logger.logEvent(playerName + " démarre une partie solo (" + maxAttempts + " tentatives).");
+    }
+
+    /**
+     * GG|GAME_OVER|WIN|nom_joueur or GG|GAME_OVER|LOSE|NONE
+     * Signalé par un client pour clore la partie P2P côté serveur.
+     */
+    private void onGameOver(Message msg) {
+        try {
+            msg.requireFields(2);
+            String result = msg.getField(0);
+            String winner = msg.getField(1);
+
+            if (currentRoom == null) {
+                sendError("Aucune salle active pour GAME_OVER.");
+                return;
+            }
+
+            Room room = server.getRoom(currentRoom);
+            if (room == null) {
+                sendError("Salle introuvable : " + currentRoom);
+                return;
+            }
+
+            if (!room.isGameInProgress()) {
+                return;
+            }
+
+            room.setGameInProgress(false);
+            broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
+                    "Partie terminée: " + result + " (" + winner + "). Salle en attente."));
+
+            logger.logEvent("Partie P2P terminée dans la salle " + currentRoom
+                    + " -> result=" + result + " winner=" + winner);
+
+        } catch (ParseException e) {
+            sendError("GAME_OVER requiert : result|winner");
+        }
     }
 
     /**
@@ -479,16 +536,53 @@ public class ClientHandler implements Runnable {
      * La logique de feedback est déléguée à GameSession (Thomas).
      */
     private void onGuess(Message msg) {
-        // TODO (Thomas) : récupérer la GameSession de ce joueur et calculer le feedback
-        //GameSession session = activeServerSessions.get(playerName);
-        //if (session == null) { sendError("Aucune partie en cours."); return; }
-        //Feedback fb = session.checkGuess(msg);
-        //send(fb.toGGString());
-        //--------------------------------
+        try {
+            msg.requireFields(GameSession.COMBO_SIZE);
+        } catch (ParseException e) {
+            sendError("GUESS requiert " + GameSession.COMBO_SIZE + " couleurs.");
+            return;
+        }
 
-        // Placeholder : on répond avec un feedback fictif pour que le client ne bloque pas
-        logger.logEvent("GUESS reçu de " + playerName + " (mode solo — délégué à GameSession).");
-        send("GG|FEEDBACK|0|0"); // Remplacé quand GameSession est intégrée
+        GameSession session = server.getSoloSession(playerName);
+        if (session == null) {
+            sendError("Aucune partie solo en cours.");
+            return;
+        }
+        if (session.isFinished()) {
+            sendError("La partie solo est déjà terminée.");
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        try {
+            java.util.List<common.Color> guess = new java.util.ArrayList<>();
+            for (int i = 0; i < GameSession.COMBO_SIZE; i++) {
+                guess.add(common.Color.fromString(msg.getField(i)));
+            }
+
+            GameSession.Feedback feedback = session.checkGuess(guess, playerName);
+
+            send(MessageParser.serialize(common.CommandType.FEEDBACK,
+                    String.valueOf(feedback.getCorrectColors()),
+                    String.valueOf(feedback.getCorrectPositions())));
+
+            if (feedback.isWin()) {
+                send(MessageParser.serialize(common.CommandType.WINNER, playerName));
+            send(MessageParser.serialize(common.CommandType.GAME_OVER, "WIN", playerName));
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        if (session.isFinished()) {
+            // Partie perdue (tentatives épuisées)
+            send(MessageParser.serialize(common.CommandType.GAME_OVER, "LOSE", "NONE"));
+            server.removeSoloSession(playerName);
+            return;
+        }
+
+        } catch (common.ParseException e) {
+            sendError("Couleur invalide dans GUESS : " + e.getMessage());
+        }
     }
 
     // -------------------------------------------------------------------------

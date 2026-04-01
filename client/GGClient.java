@@ -24,11 +24,14 @@ public class GGClient {
     private int p2pPort;
     private Socket serverSocket;
     private String playerName;
+    private boolean connected = false;
 
     private P2PManager p2pManager;
     private CLIHandler cliHandler;
     // ServerListener est démarré dans connect() et gardé en référence pour join()
     private ServerListener serverListener;
+
+    private volatile boolean playingServerGame = false;
 
     // ── Constructeur ────────────────────────────────────────────────────────
 
@@ -51,6 +54,14 @@ public class GGClient {
 
         // Initialisation du gestionnaire P2P
         p2pManager = new P2PManager(playerName);
+            // Initialisation du gestionnaire P2P
+            p2pManager = new P2PManager(playerName, this);
+            try {
+                p2pManager.startListening(0); // port dynamique pour P2P
+                System.out.println("[GGClient] P2P écoute sur le port " + p2pManager.getListeningPort());
+            } catch (IOException e) {
+                System.err.println("[GGClient] impossible de démarrer le serveur P2P : " + e.getMessage());
+            }
 
         try {
             // Démarrer le serveur P2P sur un port libre
@@ -123,6 +134,7 @@ public class GGClient {
             if (serverSocket  != null && !serverSocket.isClosed()) {
                 serverSocket.close();
             }
+            playingServerGame = false;
             System.out.println("[GGClient] Déconnecté du serveur.");
         } catch (IOException e) {
             System.err.println("[GGClient] Erreur lors de la déconnexion : " + e.getMessage());
@@ -134,8 +146,45 @@ public class GGClient {
     public String     getPlayerName()  { return playerName;  }
     public P2PManager getP2PManager()  { return p2pManager;  }
     public CLIHandler getCLIHandler()  { return cliHandler;  }
+
+
+
     public int getP2pPort() { return p2pPort; }
 
+    public String getPlayerName() {
+        if (!connected || playerName == null || playerName.isBlank()) {
+            return "[NON_CONNECTE]";
+        }
+        return playerName;
+    }
+
+    public void setPlayerName(String playerName) {
+        this.playerName = playerName;
+    }
+
+    public boolean isConnected() {
+        return connected;
+    }
+
+    public void setConnected(boolean connected) {
+        this.connected = connected;
+    }
+
+    public P2PManager getP2PManager()      { return p2pManager;  }
+    public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
+    public CLIHandler getCLIHandler()      { return cliHandler;  }
+    public boolean    isPlayingServerGame() { return playingServerGame; }
+    public void       setPlayingServerGame(boolean playing) { playingServerGame = playing; }
+    /**
+     * Notifie le serveur de la fin de partie pour la salle courante (P2P).
+     */
+    public void notifyServerGameOver(String result, String winner) {
+        if (serverSocket == null || serverSocket.isClosed()) {
+            System.err.println("[GGClient] Impossible d'envoyer GAME_OVER au serveur : socket fermé.");
+            return;
+        }
+        sendToServer(MessageParser.serialize(common.CommandType.GAME_OVER, result, winner));
+    }
     // ── Point d'entrée ───────────────────────────────────────────────────────
 
     /**

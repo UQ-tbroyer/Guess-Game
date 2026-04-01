@@ -2,7 +2,6 @@ package client;
 
 import common.Color;
 import common.DebugLogger;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +39,9 @@ public class GameEngine {
     /** Vrai si ce client détient la combinaison secrète cette manche. */
     private boolean isSecretOwner;
 
+    /** Vrai si cette manche est terminée (victoire ou échec). */
+    private boolean gameOver;
+
     /** Historique de toutes les propositions de la manche courante. */
     private final List<GuessRecord> guessHistory;
 
@@ -53,6 +55,7 @@ public class GameEngine {
         this.secretCombination = null;
         this.attemptsLeft      = 0;
         this.isSecretOwner     = false;
+        this.gameOver         = false;
         this.guessHistory      = new ArrayList<>();
     }
 
@@ -72,12 +75,18 @@ public class GameEngine {
                 "La combinaison doit contenir exactement " + COMBINATION_SIZE + " couleurs."
             );
         }
+        if (secretCombination != null && !gameOver) {
+            throw new IllegalStateException("Secret déjà défini pour cette manche. Attendez NEW_GAME.");
+        }
+
         for (Color c : combo) {
             if (c == null) throw new IllegalArgumentException("Une couleur dans la combinaison est null.");
         }
+
         this.secretCombination = new ArrayList<>(combo);
         this.isSecretOwner     = true;
-        logger.logEvent("Secret défini par ce client : " + getSecretAsString());
+        logger.logEvent("Secret défini par ce client (valeur masquée pour éviter fuite).\n" +
+                "Attention : ne jamais exposer la combinaison secrète aux autres joueurs.");
     }
 
     /**
@@ -91,6 +100,7 @@ public class GameEngine {
             throw new IllegalArgumentException("Le nombre de tentatives doit être positif.");
         }
         this.attemptsLeft = maxAttempts;
+        this.gameOver = false;
         logger.logEvent("Tentatives configurées : " + maxAttempts);
     }
 
@@ -166,18 +176,24 @@ public class GameEngine {
             }
         }
 
-        // Calculer le nombre total de couleurs correctes (incluant les bien placées)
-int totalCorrectColors = correctColors + correctPositions;
+        // Enregistrement dans l'historique
+        GuessRecord record = new GuessRecord(guess, correctColors, correctPositions, playerName);
+        guessHistory.add(record);
+        logger.logEvent("Proposition enregistrée :\n" + record.toTraceString());
 
-// Enregistrement dans l'historique
-GuessRecord record = new GuessRecord(guess, totalCorrectColors, correctPositions, playerName);
-guessHistory.add(record);
-logger.logEvent("Proposition enregistrée :\n" + record.toTraceString());
+        // Décrémenter les tentatives (0 si non configuré = illimité)
+        if (attemptsLeft > 0) attemptsLeft--;
 
-// Décrémenter les tentatives
-if (attemptsLeft > 0) attemptsLeft--;
+        // Détecter fin de manche
+        if (correctPositions == COMBINATION_SIZE) {
+            gameOver = true;
+            logger.logEvent("GameEngine : victoire déclarée pour " + playerName + ".");
+        } else if (attemptsLeft == 0) {
+            gameOver = true;
+            logger.logEvent("GameEngine : plus de tentatives, manche terminée.");
+        }
 
-return new Feedback(totalCorrectColors, correctPositions);
+        return new Feedback(correctColors, correctPositions);
     }
 
     // -------------------------------------------------------------------------
@@ -202,21 +218,18 @@ return new Feedback(totalCorrectColors, correctPositions);
 
     public boolean isSecretOwner()             { return isSecretOwner; }
     public int getAttemptsLeft()               { return attemptsLeft; }
+    public boolean isGameOver()                { return gameOver; }
+    public void setGameOver(boolean gameOver)  { this.gameOver = gameOver; }
 
     /** Retourne une copie défensive de l'historique. */
     public List<GuessRecord> getGuessHistory() { return new ArrayList<>(guessHistory); }
 
     /**
-     * Retourne le secret sous forme lisible pour les traces.
-     * NE PAS envoyer sur le réseau.
+     * Retourne un texte indicatif à usage débogage local uniquement.
+     * Le secret n'est jamais exposé en clair ici pour éviter toute fuite accidentelle.
      */
     public String getSecretAsString() {
         if (secretCombination == null) return "[aucun secret défini]";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < secretCombination.size(); i++) {
-            if (i > 0) sb.append("|");
-            sb.append(secretCombination.get(i).name());
-        }
-        return sb.toString();
+        return "[secret masqué]";
     }
 }
