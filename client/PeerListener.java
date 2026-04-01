@@ -124,7 +124,7 @@ public class PeerListener extends Thread {
     // Handlers
     // -------------------------------------------------------------------------
 
-    /**
+    /*
      * GG|SECRET_SET|nom_joueur
      * Identifie le détenteur du secret et met à jour P2PManager.
      */
@@ -167,32 +167,32 @@ public class PeerListener extends Thread {
         }
     }
 
-    /**
+    /*
      * GG|GUESS|c1|c2|c3|c4
      * Reçu par le détenteur du secret — calcule et renvoie le feedback.
      */
     private void onGuess(Message msg) {
-    if (!gameEngine.isSecretOwner()) {
-        logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
-        return;
-    }
-    try {
-        msg.requireFields(GameEngine.COMBINATION_SIZE);
-        if (gameEngine.isGameOver()) {
-            logger.logEvent("PeerListener : GUESS reçu mais la manche est terminée, message ignoré.");
-            return;
-        }
         if (!gameEngine.isSecretOwner()) {
             logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
             return;
         }
         try {
             msg.requireFields(GameEngine.COMBINATION_SIZE);
+            if (gameEngine.isGameOver()) {
+                logger.logEvent("PeerListener : GUESS reçu mais la manche est terminée, message ignoré.");
+                return;
+            }
+            if (!gameEngine.isSecretOwner()) {
+                logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
+                return;
+            }
 
-        List<Color> guess = new ArrayList<>();
-        for (int i = 0; i < GameEngine.COMBINATION_SIZE; i++) {
-            guess.add(Color.fromString(msg.getField(i)));
-        }
+            msg.requireFields(GameEngine.COMBINATION_SIZE);
+
+            List<Color> guess = new ArrayList<>();
+            for (int i = 0; i < GameEngine.COMBINATION_SIZE; i++) {
+                guess.add(Color.fromString(msg.getField(i)));
+            }
 
             String guesser = peerName;
             if (guesser == null) {
@@ -207,15 +207,17 @@ public class PeerListener extends Thread {
 
             Feedback feedback = gameEngine.checkGuess(guess, guesser);
 
-        logger.logEvent("Feedback pour " + guesser + " : " + feedback);
-        p2pManager.sendFeedback(guesser, feedback);
+            logger.logEvent("Feedback pour " + guesser + " : " + feedback);
+            p2pManager.sendFeedback(guesser, feedback);
 
-    } catch (ParseException e) {
-        logger.logError("PeerListener : GUESS mal formé.", e);
+
+
+        } catch (ParseException e) {
+            logger.logError("PeerListener : GUESS mal formé.", e);
+        }
     }
-}
 
-    /**
+    /*
      * GG|FEEDBACK|couleurs_correctes|positions_correctes
      */
     private void onFeedback(Message msg) {
@@ -236,7 +238,7 @@ public class PeerListener extends Thread {
         }
     }
 
-    /**
+    /*
      * GG|WINNER|nom_joueur
      */
     private void onWinner(Message msg) {
@@ -253,7 +255,7 @@ public class PeerListener extends Thread {
         }
     }
 
-    /**
+    /*
      * GG|GAME_OVER|WIN|joueur ou GG|GAME_OVER|LOSE|NONE
      */
     private void onGameOver(Message msg) {
@@ -281,9 +283,7 @@ public class PeerListener extends Thread {
         }
     }
 
-    /**
-     * GG|NEW_GAME — réinitialise le GameEngine local.
-     */
+
     private void onNewGame(Message msg) {
         gameEngine.reset();
         logger.logEvent("PeerListener : nouvelle manche — GameEngine réinitialisé.");

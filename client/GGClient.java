@@ -1,5 +1,7 @@
 package client;
 
+import common.MessageParser;
+
 import java.io.*;
 import java.net.*;
 
@@ -18,7 +20,7 @@ import java.net.*;
 public class GGClient {
 
     // ── Champs ──────────────────────────────────────────────────────────────
-	private String currentRoom;
+    private String currentRoom;
     private String serverIp;
     private int serverPort;
     private int p2pPort;
@@ -36,7 +38,7 @@ public class GGClient {
     // ── Constructeur ────────────────────────────────────────────────────────
 
     public GGClient(String serverIp, int serverPort, String playerName) {
-        this.serverIp   = serverIp;
+        this.serverIp = serverIp;
         this.serverPort = serverPort;
         this.playerName = playerName;
     }
@@ -48,53 +50,53 @@ public class GGClient {
      * puis démarre ServerListener et CLIHandler.
      */
     public void connect(String ip, String port, int portInt) {
-    try {
-        serverSocket = new Socket(ip, portInt);
-        System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
+        try {
+            serverSocket = new Socket(ip, portInt);
+            System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
 
-        // Initialisation du gestionnaire P2P
-        p2pManager = new P2PManager(playerName);
+            // Initialisation du gestionnaire P2P
+            p2pManager = new P2PManager(playerName);
             // Initialisation du gestionnaire P2P
             p2pManager = new P2PManager(playerName, this);
             try {
                 p2pManager.startListening(0); // port dynamique pour P2P
-                System.out.println("[GGClient] P2P écoute sur le port " + p2pManager.getListeningPort());
+                //System.out.println("[GGClient] P2P écoute sur le port " + p2pManager.getListeningPort());
             } catch (IOException e) {
                 System.err.println("[GGClient] impossible de démarrer le serveur P2P : " + e.getMessage());
             }
 
-        try {
-            // Démarrer le serveur P2P sur un port libre
-            p2pManager.startListening(0);
-            p2pPort = p2pManager.getLocalPort();
-            System.out.println("[GGClient] Serveur P2P démarré sur le port " + p2pPort);
+            try {
+                // Démarrer le serveur P2P sur un port libre
+                p2pManager.startListening(0);
+                p2pPort = p2pManager.getLocalPort();
+                System.out.println("[GGClient] Serveur P2P démarré sur le port " + p2pPort);
+            } catch (IOException e) {
+                System.err.println("[GGClient] Impossible de démarrer le serveur P2P: " + e.getMessage());
+                p2pPort = 0;
+            }
+
+            // Démarrage du thread d'écoute du serveur
+            serverListener = new ServerListener(serverSocket, this);
+            serverListener.start();
+
+            // Envoi du message de connexion initial
+            sendToServer("GG|CONNECT|" + playerName);
+
+            // Démarrage de l'interface CLI
+            cliHandler = new CLIHandler(this);
+            cliHandler.start();
+
+            try {
+                cliHandler.join();
+                serverListener.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
         } catch (IOException e) {
-            System.err.println("[GGClient] Impossible de démarrer le serveur P2P: " + e.getMessage());
-            p2pPort = 0;
+            System.err.println("[GGClient] Impossible de se connecter au serveur : " + e.getMessage());
         }
-
-        // Démarrage du thread d'écoute du serveur
-        serverListener = new ServerListener(serverSocket, this);
-        serverListener.start();
-
-        // Envoi du message de connexion initial
-        sendToServer("GG|CONNECT|" + playerName);
-
-        // Démarrage de l'interface CLI
-        cliHandler = new CLIHandler(this);
-        cliHandler.start();
-
-        try {
-            cliHandler.join();
-            serverListener.join();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-    } catch (IOException e) {
-        System.err.println("[GGClient] Impossible de se connecter au serveur : " + e.getMessage());
     }
-}
 
     /**
      * Surcharge de connect() utilisant les champs de l'instance.
@@ -130,8 +132,8 @@ public class GGClient {
     public void disconnect() {
         try {
             if (serverListener != null) serverListener.interrupt();
-            if (cliHandler    != null) cliHandler.interrupt();
-            if (serverSocket  != null && !serverSocket.isClosed()) {
+            if (cliHandler != null) cliHandler.interrupt();
+            if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
             }
             playingServerGame = false;
@@ -143,13 +145,19 @@ public class GGClient {
 
     // ── Getters ─────────────────────────────────────────────────────────────
 
-    public String     getPlayerName()  { return playerName;  }
-    public P2PManager getP2PManager()  { return p2pManager;  }
-    public CLIHandler getCLIHandler()  { return cliHandler;  }
+    //public String     getPlayerName()  { return playerName;  }
+    public P2PManager getP2PManager() {
+        return p2pManager;
+    }
+
+    public CLIHandler getCLIHandler() {
+        return cliHandler;
+    }
 
 
-
-    public int getP2pPort() { return p2pPort; }
+    public int getP2pPort() {
+        return p2pPort;
+    }
 
     public String getPlayerName() {
         if (!connected || playerName == null || playerName.isBlank()) {
@@ -170,11 +178,17 @@ public class GGClient {
         this.connected = connected;
     }
 
-    public P2PManager getP2PManager()      { return p2pManager;  }
-    public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
-    public CLIHandler getCLIHandler()      { return cliHandler;  }
-    public boolean    isPlayingServerGame() { return playingServerGame; }
-    public void       setPlayingServerGame(boolean playing) { playingServerGame = playing; }
+    //public P2PManager getP2PManager()      { return p2pManager;  }
+    //public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
+    //public CLIHandler getCLIHandler()      { return cliHandler;  }
+    public boolean isPlayingServerGame() {
+        return playingServerGame;
+    }
+
+    public void setPlayingServerGame(boolean playing) {
+        playingServerGame = playing;
+    }
+
     /**
      * Notifie le serveur de la fin de partie pour la salle courante (P2P).
      */
@@ -189,25 +203,25 @@ public class GGClient {
 
     /**
      * main() — Point d'entrée du programme client.
-     *
+     * <p>
      * Usage : java -jar client.jar [ip] [port] [playerName]
      */
     public static void main(String[] args) {
-        String ip         = (args.length > 0) ? args[0] : "127.0.0.1";
-        int    port       = (args.length > 1) ? Integer.parseInt(args[1]) : 5000;
+        String ip = (args.length > 0) ? args[0] : "127.0.0.1";
+        int port = (args.length > 1) ? Integer.parseInt(args[1]) : 5000;
         String playerName = (args.length > 2) ? args[2] : "bob";
 
         GGClient client = new GGClient(ip, port, playerName);
         client.connect();
     }
 
-	public String getCurrentRoom() {
-		// TODO Auto-generated method stub
-		return currentRoom;
-	}
+    public String getCurrentRoom() {
+        // TODO Auto-generated method stub
+        return currentRoom;
+    }
 
-	public void setCurrentRoom(String string) {
-		// TODO Auto-generated method stub
-		currentRoom = string;
-	}
+    public void setCurrentRoom(String string) {
+        currentRoom = string;
+    }
+
 }

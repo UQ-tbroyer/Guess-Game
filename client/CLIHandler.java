@@ -212,17 +212,6 @@ public class CLIHandler extends Thread {
 
                 else {
                     client.sendToServer(guess); // Fallback : partie contre serveur
-
-                if (client.isPlayingServerGame()) {
-                    client.sendToServer(guess);
-                } else {
-                    P2PManager p2pG = client.getP2PManager();
-                    if (p2pG != null) {
-                        p2pG.sendGuess(java.util.Arrays.asList(
-                                tokens[1], tokens[2], tokens[3], tokens[4]));
-                    } else {
-                        client.sendToServer(guess);
-                    }
                 }
                 break;
 

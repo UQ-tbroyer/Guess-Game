@@ -403,10 +403,10 @@ public class P2PManager {
     // Enregistrement d'un pair (appelé par PeerListener)
     // -------------------------------------------------------------------------
 
-    /**
+    /*
      * Enregistre le socket d'un pair identifié par son nom.
      * Appelé par PeerListener quand il identifie le pair depuis le premier message.
-     */
+     */ /*
     public void registerPeer(String peerName, Socket peerSocket) {
         peers.put(peerName, peerSocket);
         logger.logEvent("P2PManager : pair enregistré : " + peerName);
