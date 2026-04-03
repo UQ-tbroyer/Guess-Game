@@ -433,8 +433,10 @@ public class ClientHandler implements Runnable {
         room.setGameInProgress(true);
 
         // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
+        //String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,roomName, room.getGameStartedPayload());
+        int maxAttempts = room.getMaxAttempts();
         String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
-                roomName, room.getGameStartedPayload());
+                roomName, String.valueOf(maxAttempts), room.getGameStartedPayload());
         broadcastToRoom(room, gameStartedMsg);
 
         // Notifier explicitement l'admin qu'il peut choisir le secret en P2P

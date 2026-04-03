@@ -53,7 +53,7 @@ public class GameEngine {
 
     public GameEngine() {
         this.secretCombination = null;
-        this.attemptsLeft      = 0;
+        this.attemptsLeft      =  -1;//0;
         this.isSecretOwner     = false;
         this.gameOver         = false;
         this.guessHistory      = new ArrayList<>();

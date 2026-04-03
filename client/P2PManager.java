@@ -499,4 +499,9 @@ public class P2PManager {
     public String     getPlayerName()        { return playerName; }
     public String     getCurrentSecretOwner(){ return currentSecretOwner; }
     public int        getListeningPort()     { return listeningPort; }
+
+    public void setMaxAttempts(int maxAttempts) {
+        gameEngine.setMaxAttempts(maxAttempts);
+        logger.logEvent("P2PManager : nombre de tentatives configuré à " + maxAttempts);
+    }
 }

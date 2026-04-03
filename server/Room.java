@@ -274,6 +274,7 @@ public class Room {
     public String getName()                          { return name; }
     public int getMaxPlayers()                       { return maxPlayers; }
     public int getMaxAttempts()                      { return maxAttempts; }
+    public int getMaxAttemptsTotal()                 { return maxAttempts * getPlayerCount(); }
     public String getAdminName()                     { return adminName; }
     public int getPlayerCount()                      { return players.size(); }
     public boolean isFull()                          { return players.size() >= maxPlayers; }

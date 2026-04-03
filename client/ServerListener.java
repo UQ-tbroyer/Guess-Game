@@ -296,11 +296,36 @@ public class ServerListener extends Thread {
      */
     private void onGameStarted(String rawMessage) {
         System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
+        String[] parts = rawMessage.split("\\|");
+        if (parts.length < 4) {
+            System.err.println("[ServerListener] GAME_STARTED mal formé (trop peu de champs) : " + rawMessage);
+            return;
+        }
+        // parts[0]="GG", parts[1]="GAME_STARTED", parts[2]=nom_salle, parts[3]=max_tentatives
+        String roomName = parts[2];
+        int maxAttempts;
+        try {
+            maxAttempts = Integer.parseInt(parts[3]);
+        } catch (NumberFormatException e) {
+            System.err.println("[ServerListener] max_tentatives invalide : " + parts[3] + ", utilisation de 10 par défaut");
+            maxAttempts = 10;
+        }
+        System.out.println("[ServerListener] Salle : " + roomName + " | Tentatives max : " + maxAttempts);
         System.out.println("[ServerListener] Astuce : si vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.");
+
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
-            // On passe le message brut ; P2PManager extrait les adresses
-            p2p.connectToPeers(parseAddresses(rawMessage));
+            // ⚠️ CRUCIAL : configurer le nombre de tentatives AVANT de connecter les pairs
+            p2p.setMaxAttempts(maxAttempts);
+
+            // La liste des pairs se trouve à l'index 4 (si présente)
+            if (parts.length >= 5) {
+                String peersData = parts[4];
+                java.util.Map<String, String> addresses = parseAddresses(peersData);
+                p2p.connectToPeers(addresses);
+            } else {
+                System.out.println("[ServerListener] Aucune information de pairs reçue (peut-être mode solo ?)");
+            }
         }
     }
 
@@ -372,23 +397,21 @@ public class ServerListener extends Thread {
     }
 
     /**
-     * Parse les adresses P2P depuis le message GAME_STARTED.
-     * Format attendu (hypothèse d'équipe) : ...| nom1:ip1:port1,nom2:ip2:port2
-     *
-     * @return Un tableau de type {"nom:ip:port", ...}
+     * Parse les adresses P2P depuis une chaîne de la forme "nom1:ip1:port1,nom2:ip2:port2,..."
+     * @param peersData la sous-chaîne contenant les informations des pairs
+     * @return une Map nom -> "ip:port"
      */
-    private java.util.Map<String, String> parseAddresses(String rawMessage) {
+    private java.util.Map<String, String> parseAddresses(String peersData) {
         java.util.Map<String, String> addresses = new java.util.HashMap<>();
-        String[] parts = rawMessage.split("\\|");
-        if (parts.length < 4) return addresses;
-
-        // parts[3] = "joueur1:ip1:port1,joueur2:ip2:port2"
-        String[] entries = parts[3].split(",");
+        if (peersData == null || peersData.isEmpty()) return addresses;
+        String[] entries = peersData.split(",");
         for (String entry : entries) {
             String[] tokens = entry.trim().split(":");
             if (tokens.length == 3) {
                 // clé = nom, valeur = ip:port
                 addresses.put(tokens[0], tokens[1] + ":" + tokens[2]);
+            } else {
+                System.err.println("[ServerListener] Adresse pair mal formée : " + entry);
             }
         }
         return addresses;
