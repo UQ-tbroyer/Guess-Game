@@ -4,6 +4,7 @@ import common.MessageParser;
 import java.io.*;
 import java.net.*;
 
+
 /**
  * GGClient — Point d'entrée principal du client Guess Game.
  *

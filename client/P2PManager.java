@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,6 +65,15 @@ public class P2PManager {
 
     /** Indicateur si GAME_OVER a été signalé au serveur pour cette manche. */
     private boolean gameOverReportedToServer = false;
+
+    private List<String> orderedPlayers;   // ordre des joueurs (sauf le détenteur)
+    private int currentTurnIndex = -1;
+    private String currentTurnPlayer = null;
+    private boolean myTurn = false;
+
+    private String secretOwner;                     // nom du détenteur du secret
+    private List<String> orderedGuessers;           // liste des joueurs qui devinent (dans l'ordre)
+    private int currentGuesserIndex = -1;
 
     /**
      * Nom du détenteur du secret pour la manche courante.
@@ -218,6 +228,15 @@ public class P2PManager {
      * @param colorNames liste de 4 noms de couleurs en String
      */
     public void sendGuess(List<String> colorNames) {
+        if (gameEngine.isSecretOwner()) {
+            System.out.println("[P2PManager] Vous êtes le détenteur du secret, vous ne pouvez pas deviner.");
+            return;
+        }
+        if (!myTurn) {
+            System.out.println("[P2PManager] Ce n'est pas votre tour !");
+            return;
+        }
+
         if (gameEngine.isGameOver()) {
             logger.logEvent("P2PManager : tentative de guess ignorée car partie terminée.");
             return;
@@ -366,6 +385,9 @@ public class P2PManager {
     public void resetForNewGame() {
         gameEngine.reset();
         currentSecretOwner = null;
+        secretOwner = null;
+        orderedGuessers = null;
+        currentGuesserIndex = -1;
         gameOverReportedToServer = false;
         logger.logEvent("P2PManager : réinitialisé pour nouvelle manche.");
     }
@@ -384,6 +406,67 @@ public class P2PManager {
         client.sendToServer(MessageParser.serialize(common.CommandType.GAME_OVER, result, winner));
         gameOverReportedToServer = true;
         logger.logEvent("P2PManager : GAME_OVER notifié au serveur (" + result + ", " + winner + ").");
+    }
+
+    public void setOrderedPlayers(List<String> players) {
+        this.orderedPlayers = new ArrayList<>(players);
+        // Retirer le détenteur du secret (il ne joue pas)
+        if (currentSecretOwner != null) {
+            orderedPlayers.removeIf(name -> name.equals(currentSecretOwner));
+        }
+    }
+
+    /**
+     * Démarre le système de tours (appelé après setOrderedPlayers)
+     */
+    public void startTurnSystem() {
+        if (orderedPlayers == null || orderedPlayers.isEmpty()) {
+            logger.logEvent("Aucun joueur pour le tour par tour");
+            return;
+        }
+        // Premier joueur de la liste
+        currentTurnIndex = 0;
+        setCurrentTurn(orderedPlayers.get(0));
+    }
+
+    /**
+     * Change le tour actuel et notifie tous les pairs
+     */
+    private void setCurrentTurn(String playerName) {
+        this.currentTurnPlayer = playerName;
+        this.myTurn = playerName.equals(this.playerName);
+        String turnMsg = MessageParser.serialize(CommandType.TURN, playerName);
+        broadcast(turnMsg);
+        if (myTurn) {
+            System.out.println("\n[P2PManager] ★ C'est VOTRE tour ! Utilisez 'guess <c1> <c2> <c3> <c4>'");
+        } else {
+            System.out.println("\n[P2PManager] Tour de " + playerName + ". Veuillez patienter.");
+        }
+    }
+
+    /**
+     * Passe au joueur suivant (appelé après chaque FEEDBACK)
+     */
+    /*
+    public void nextTurn() {
+        if (gameEngine.isGameOver()) return;
+        if (orderedPlayers == null || orderedPlayers.isEmpty()) return;
+        currentTurnIndex = (currentTurnIndex + 1) % orderedPlayers.size();
+        setCurrentTurn(orderedPlayers.get(currentTurnIndex));
+    }*/
+
+    public void nextTurn() {
+        if (gameEngine.isGameOver()) return;
+        if (!gameEngine.isSecretOwner()) {
+            logger.logError("Seul le détenteur du secret peut passer le tour.");
+            return;
+        }
+        if (orderedGuessers == null || orderedGuessers.isEmpty()) return;
+        currentGuesserIndex = (currentGuesserIndex + 1) % orderedGuessers.size();
+        String nextGuesser = orderedGuessers.get(currentGuesserIndex);
+        String turnMsg = MessageParser.serialize(CommandType.TURN, nextGuesser);
+        broadcast(turnMsg);
+        logger.logEvent("Nouveau tour : " + nextGuesser);
     }
 
     // -------------------------------------------------------------------------
@@ -432,20 +515,59 @@ public class P2PManager {
      * Le client doit être le donneur de secret.
      */
     public void setSecret(java.util.List<Color> combo) {
+        if (secretOwner == null) {
+            System.out.println("[P2PManager] Aucun détenteur désigné. Attendez le début de la partie.");
+            return;
+        }
+
+        if (currentSecretOwner != null) {
+            throw new IllegalStateException("Secret déjà défini pour cette manche.");
+        }
+        if (!gameEngine.isSecretOwner()) {
+            throw new IllegalStateException("Vous n'êtes pas le détenteur désigné du secret pour cette partie.");
+        }
+        if (!secretOwner.equals(playerName)) {
+            System.out.println("[P2PManager] Seul " + secretOwner + " peut définir le secret.");
+            return;
+        }
         if (combo == null || combo.size() != GameEngine.COMBINATION_SIZE) {
             throw new IllegalArgumentException("La combinaison doit contenir exactement " + GameEngine.COMBINATION_SIZE + " couleurs.");
         }
         if (gameEngine.isGameOver()) {
             throw new IllegalStateException("La partie est terminée, vous ne pouvez pas (re)définir un secret.");
         }
+        /*
         if (gameEngine.isSecretOwner() && !gameEngine.isGameOver()) {
             throw new IllegalStateException("Secret déjà défini pour cette manche. Attendez NEW_GAME.");
-        }
+        }*/
+
 
         gameEngine.setSecret(combo);
         currentSecretOwner = playerName;
+
+        if (gameEngine.isSecretOwner()) {
+            startTurnSystemAsOwner();
+        }
+
         logger.logEvent("P2PManager : secret local défini par " + playerName + " (combinaison masquée).");
     }
+    public void setCurrentTurnFromPeer(String player) {
+        this.currentTurnPlayer = player;
+        this.myTurn = player.equals(this.playerName);
+        if (myTurn) {
+            System.out.println("[P2PManager] C'est votre tour !");
+        } else {
+            System.out.println("[P2PManager] Tour de " + player);
+        }
+    }
+
+    public void setSecretOwner(String owner) {
+        this.secretOwner = owner;
+        boolean isOwner = (owner != null && owner.equals(playerName));
+        gameEngine.setSecretOwner(owner != null && owner.equals(playerName));
+        logger.logEvent("P2PManager : détenteur du secret = " + owner);
+    }
+
 
     // -------------------------------------------------------------------------
     // Fermeture
@@ -489,6 +611,24 @@ public class P2PManager {
         } catch (IOException e) {
             logger.logError("P2PManager : erreur d'envoi vers " + peerName, e);
         }
+    }
+
+    private void startTurnSystemAsOwner() {
+        // Construire la liste des autres joueurs (tous les pairs sauf moi)
+        orderedGuessers = new ArrayList<>(peers.keySet());
+        orderedGuessers.removeIf(name -> name.equals(playerName));
+        if (orderedGuessers.isEmpty()) {
+            logger.logEvent("Aucun autre joueur pour deviner.");
+            return;
+        }
+        // Mélanger aléatoirement l'ordre des devineurs
+        Collections.shuffle(orderedGuessers);
+        currentGuesserIndex = 0;
+        String firstGuesser = orderedGuessers.get(0);
+        // Envoyer TURN à tous
+        String turnMsg = MessageParser.serialize(CommandType.TURN, firstGuesser);
+        broadcast(turnMsg);
+        logger.logEvent("Système de tour démarré par le détenteur. Premier joueur: " + firstGuesser);
     }
 
     // -------------------------------------------------------------------------

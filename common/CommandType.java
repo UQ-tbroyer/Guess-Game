@@ -112,6 +112,10 @@ public enum CommandType {
      */
     INFO,
 
+    // common/CommandType.java
+    TURN,      // GG|TURN|nom_joueur  -> indique qui doit jouer
+    TURN_SKIP, // optionnel : pour passer le tour si un joueur est absent
+
     // --- Erreur générique ---
     /**
      * Serveur → Client : GG|ERROR|message_erreur

@@ -2,6 +2,9 @@ package client;
 
 import java.io.*;
 import java.net.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * ServerListener — Thread d'écoute passive du serveur.
@@ -29,6 +32,8 @@ public class ServerListener extends Thread {
 
     /** Contrôle de la boucle principale. */
     private volatile boolean running = true;
+
+
 
     // ── Constructeur ────────────────────────────────────────────────────────
 
@@ -295,37 +300,44 @@ public class ServerListener extends Thread {
      *             nom:ip:port pour chaque joueur. P2PManager sait les parser.
      */
     private void onGameStarted(String rawMessage) {
-        System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
         String[] parts = rawMessage.split("\\|");
-        if (parts.length < 4) {
-            System.err.println("[ServerListener] GAME_STARTED mal formé (trop peu de champs) : " + rawMessage);
+        if (parts.length < 6) {
+            System.err.println("[ServerListener] GAME_STARTED mal formé");
             return;
         }
-        // parts[0]="GG", parts[1]="GAME_STARTED", parts[2]=nom_salle, parts[3]=max_tentatives
         String roomName = parts[2];
         int maxAttempts;
-        try {
+        String secretOwner;
+        String peersData;
+
+        // Détection du nouveau format (le 4ème champ est numérique -> maxAttempts)
+        if (parts[3].matches("\\d+")) {
             maxAttempts = Integer.parseInt(parts[3]);
-        } catch (NumberFormatException e) {
-            System.err.println("[ServerListener] max_tentatives invalide : " + parts[3] + ", utilisation de 10 par défaut");
+            if (parts.length < 6) {
+                System.err.println("[ServerListener] GAME_STARTED manque secretOwner ou peersData");
+                return;
+            }
+            secretOwner = parts[4];
+            peersData = parts[5];
+        } else {
+            // Ancien format (sans secretOwner) – fallback
             maxAttempts = 10;
+            secretOwner = null;
+            peersData = parts[3];
+            System.err.println("[ServerListener] Ancien format GAME_STARTED, secretOwner non défini");
         }
-        System.out.println("[ServerListener] Salle : " + roomName + " | Tentatives max : " + maxAttempts);
-        System.out.println("[ServerListener] Astuce : si vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.");
+
+        System.out.println("[ServerListener] Salle : " + roomName +
+                " | Tentatives max : " + maxAttempts +
+                " | SecretOwner : " + secretOwner);
 
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
-            // ⚠️ CRUCIAL : configurer le nombre de tentatives AVANT de connecter les pairs
             p2p.setMaxAttempts(maxAttempts);
-
-            // La liste des pairs se trouve à l'index 4 (si présente)
-            if (parts.length >= 5) {
-                String peersData = parts[4];
-                java.util.Map<String, String> addresses = parseAddresses(peersData);
-                p2p.connectToPeers(addresses);
-            } else {
-                System.out.println("[ServerListener] Aucune information de pairs reçue (peut-être mode solo ?)");
-            }
+            p2p.setSecretOwner(secretOwner);   // <-- NOUVEAU
+            Map<String, String> addresses = parseAddresses(peersData);
+            p2p.connectToPeers(addresses);
+            // Les tours ne sont pas démarrés ici – ils le seront après que le secretOwner ait défini son secr
         }
     }
 

@@ -3,14 +3,22 @@
   <component name="ChangeListManager">
     <list default="true" id="3b51317b-020c-467e-ac31-b1374928d046" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/client/GGClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/client/GGClient.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/client/GameEngine.java" beforeDir="false" afterPath="$PROJECT_DIR$/client/GameEngine.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/client/P2PManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/client/P2PManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/client/PeerListener.java" beforeDir="false" afterPath="$PROJECT_DIR$/client/PeerListener.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/client/ServerListener.java" beforeDir="false" afterPath="$PROJECT_DIR$/client/ServerListener.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/common/CommandType.java" beforeDir="false" afterPath="$PROJECT_DIR$/common/CommandType.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/client/GameEngine.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/client/GameEngine.class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/client/P2PManager.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/client/P2PManager.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/client/PeerListener$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/client/PeerListener$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/client/PeerListener.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/client/PeerListener.class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/client/ServerListener.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/client/ServerListener.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/common/CommandType.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/common/CommandType.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/server/ClientHandler$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/server/ClientHandler$1.class" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/production/Guess-Game/server/ClientHandler.class" beforeDir="false" afterPath="$PROJECT_DIR$/out/production/Guess-Game/server/ClientHandler.class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/ClientHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/server/ClientHandler.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/Room.java" beforeDir="false" afterPath="$PROJECT_DIR$/server/Room.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -59,5 +67,17 @@
       <updated>1775143503118</updated>
     </task>
     <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="oldMeFiltersMigrated" value="true" />
   </component>
 </project>

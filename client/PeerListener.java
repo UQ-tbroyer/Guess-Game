@@ -115,6 +115,7 @@ public class PeerListener extends Thread {
             case WINNER     -> onWinner(msg);
             case GAME_OVER  -> onGameOver(msg);
             case NEW_GAME   -> onNewGame(msg);
+            case TURN       -> onTurn(msg);
             default         -> logger.logError(
                     "PeerListener : commande P2P inattendue : " + msg.getCommand());
         }
@@ -204,6 +205,8 @@ public class PeerListener extends Thread {
             logger.logEvent("Feedback pour " + guesser + " : " + feedback);
             p2pManager.sendFeedback(guesser, feedback);
 
+            p2pManager.nextTurn();
+
         } catch (ParseException e) {
             logger.logError("PeerListener : GUESS mal formé.", e);
         }
@@ -282,6 +285,18 @@ public class PeerListener extends Thread {
         gameEngine.reset();
         logger.logEvent("PeerListener : nouvelle manche — GameEngine réinitialisé.");
     }
+
+    private void onTurn(Message msg) {
+        try {
+            msg.requireFields(1);
+            String turnPlayer = msg.getField(0);
+            p2pManager.setCurrentTurnFromPeer(turnPlayer); // nouvelle méthode
+        } catch (ParseException e) {
+            logger.logError("TURN mal formé", e);
+        }
+    }
+
+
 
     // -------------------------------------------------------------------------
     // Utilitaires

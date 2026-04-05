@@ -232,4 +232,9 @@ public class GameEngine {
         if (secretCombination == null) return "[aucun secret défini]";
         return "[secret masqué]";
     }
+
+    public void setSecretOwner(boolean owner) {
+        this.isSecretOwner = owner;
+    }
+    
 }

@@ -11,6 +11,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.List;
+import java.util.Random;
 
 /**
  * ClientHandler — thread dédié à un client connecté au serveur GG.
@@ -432,20 +434,22 @@ public class ClientHandler implements Runnable {
 
         room.setGameInProgress(true);
 
+        List<String> playerNames = room.getPlayerNames();
+        String secretOwner = playerNames.get(new Random().nextInt(playerNames.size()));
+
         // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
         //String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,roomName, room.getGameStartedPayload());
         int maxAttempts = room.getMaxAttempts();
         String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
-                roomName, String.valueOf(maxAttempts), room.getGameStartedPayload());
+                roomName, String.valueOf(maxAttempts), secretOwner, room.getGameStartedPayload());
         broadcastToRoom(room, gameStartedMsg);
 
         // Notifier explicitement l'admin qu'il peut choisir le secret en P2P
-        String adminInfo = "Partie démarrée : vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.";
-        send(MessageParser.serialize(CommandType.INFO, adminInfo));
+        //String adminInfo = "Partie démarrée : vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.";
+        //send(MessageParser.serialize(CommandType.INFO, adminInfo));
 
         // Rafraîchir la salle pour tout le monde, évite que l'admin pense qu'il n'a pas reçu l'info
-        broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
-                "ADMIN: après GAME_STARTED, tapez 'secret c1 c2 c3 c4' pour commencer à recevoir des guesses."));
+        //broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,"ADMIN: après GAME_STARTED, tapez 'secret c1 c2 c3 c4' pour commencer à recevoir des guesses."));
 
         logger.logEvent("Partie démarrée dans la salle : " + roomName
                 + " | Joueurs : " + room.getPlayersAsString());
