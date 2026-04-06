@@ -133,6 +133,7 @@ public class ClientHandler implements Runnable {
             case PLAY_SERVER   -> onPlayServer(msg);
             case GAME_OVER     -> onGameOver(msg);
             case GUESS         -> onGuess(msg);
+            case NEW_GAME      -> onNewGame(msg);
             default            -> sendError("Commande non supportée côté serveur : " + msg.getCommand());
         }
     }
@@ -589,6 +590,42 @@ public class ClientHandler implements Runnable {
         } catch (common.ParseException e) {
             sendError("Couleur invalide dans GUESS : " + e.getMessage());
         }
+    }
+
+    private void onNewGame(Message msg) {
+        if (currentRoom == null) {
+            sendError("Vous n'êtes dans aucune salle.");
+            return;
+        }
+        Room room = server.getRoom(currentRoom);
+        if (room == null) {
+            sendError("Salle introuvable.");
+            return;
+        }
+        // Seul l'admin peut lancer un nouveau jeu (optionnel mais recommandé)
+        if (!permissions.isAdmin(room, playerName)) {
+            sendError("Seul l'admin peut lancer un nouveau jeu.");
+            return;
+        }
+        // Forcer la fin de l'ancienne partie si elle est encore en cours
+        if (room.isGameInProgress()) {
+            room.setGameInProgress(false);
+        }
+        // Démarrer une nouvelle partie (crée une nouvelle session)
+        room.setGameInProgress(true);
+        // Choisir un nouveau détenteur du secret aléatoirement parmi les joueurs
+        List<String> playerNames = room.getPlayerNames();
+        if (playerNames.size() < 2) {
+            sendError("Pas assez de joueurs pour démarrer une partie.");
+            room.setGameInProgress(false);
+            return;
+        }
+        String secretOwner = playerNames.get(new Random().nextInt(playerNames.size()));
+        int maxAttempts = room.getMaxAttempts();
+        String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
+                room.getName(), String.valueOf(maxAttempts), secretOwner, room.getGameStartedPayload());
+        broadcastToRoom(room, gameStartedMsg);
+        logger.logEvent("Nouveau jeu démarré dans la salle " + currentRoom + " par " + playerName);
     }
 
     // -------------------------------------------------------------------------

@@ -333,11 +333,12 @@ public class ServerListener extends Thread {
 
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
+            p2p.resetForNewGame();
             p2p.setMaxAttempts(maxAttempts);
-            p2p.setSecretOwner(secretOwner);   // <-- NOUVEAU
+            p2p.setSecretOwner(secretOwner);
             Map<String, String> addresses = parseAddresses(peersData);
             p2p.connectToPeers(addresses);
-            // Les tours ne sont pas démarrés ici – ils le seront après que le secretOwner ait défini son secr
+
         }
     }
 

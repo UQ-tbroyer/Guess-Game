@@ -14,7 +14,7 @@ import java.net.*;
  * - Si aucun argument n'est fourni, des valeurs par défaut sont utilisées
  *   (localhost:5000, joueur "Player").
  * - GGClient coordonne ServerListener (écoute passive du serveur) et
- *   CLIHandler (interface utilisateur en ligne de commande).
+ *   CLIHandler (interface utilisateur en ligne de commande)
  * - La connexion initiale GG|CONNECT est envoyée dès que le socket est établi.
  */
 public class GGClient {

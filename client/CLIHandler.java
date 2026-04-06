@@ -231,10 +231,7 @@ public class CLIHandler extends Thread {
                 break;
 
             case "newgame":
-                P2PManager p2pN = client.getP2PManager();
-                if (p2pN != null) {
-                    p2pN.broadcast("GG|NEW_GAME");
-                }
+                client.sendToServer("GG|NEW_GAME");
                 break;
 
             // ── Envoi brut (liberté totale) ───────────────────────────────
