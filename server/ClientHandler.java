@@ -494,11 +494,15 @@ public class ClientHandler implements Runnable {
 
         room.setGameInProgress(true);
 
-        // GG|GAME_STARTED|nom_salle|max_tentatives|admin|joueur1:ip1:port1,joueur2:ip2:port2,...
+        // Générer un token de session unique pour authentifier les connexions P2P
+        String sessionToken = java.util.UUID.randomUUID().toString();
+
+        // GG|GAME_STARTED|nom_salle|max_tentatives|admin|token|joueur1:ip1:port1,joueur2:ip2:port2,...
         String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
                 roomName,
                 String.valueOf(room.getMaxAttempts()),
                 room.getAdminName(),
+                sessionToken,
                 room.getGameStartedPayload());
         broadcastToRoom(room, gameStartedMsg);
 

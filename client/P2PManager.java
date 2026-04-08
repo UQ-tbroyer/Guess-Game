@@ -78,6 +78,13 @@ public class P2PManager {
     /** Nom de l'admin de la salle pour la manche courante. */
     private volatile String roomAdminName = null;
 
+    /**
+     * Token de session P2P — transmis par le serveur dans GAME_STARTED.
+     * Doit être présent dans chaque HELLO pour authentifier un pair entrant.
+     * Un pair qui ne connaît pas ce token est rejeté.
+     */
+    private volatile String sessionToken = null;
+
     /** Vrai si, avant la définition du secret, seul l'admin peut le poser. */
     private volatile boolean secretRestrictedToAdmin = true;
 
@@ -215,11 +222,12 @@ public class P2PManager {
 
             try {
                 Socket socket = new Socket(ip, port);
-                socket = security.wrapTLS(socket);
+                socket = security.wrapTlsClient(socket);
                 peers.put(peerName, socket);
                 logger.logEvent("P2PManager : connecté au pair " + peerName + " (" + ip + ":" + port + ")");
-                // Envoyer un HELLO pour que le pair puisse nous enregistrer (connexion entrante chez lui)
-                String helloMsg = MessageParser.serialize(CommandType.HELLO, playerName);
+                // Envoyer un HELLO avec le token de session pour que le pair puisse nous authentifier
+                String helloMsg = MessageParser.serialize(CommandType.HELLO, playerName,
+                        sessionToken != null ? sessionToken : "");
                 socket.getOutputStream().write((security.signMessage(helloMsg) + "\n").getBytes("UTF-8"));
                 socket.getOutputStream().flush();
                 PeerListener listener = new PeerListener(socket, this, gameEngine, security);
@@ -605,6 +613,15 @@ public class P2PManager {
         return roomAdminName;
     }
 
+    public void setSessionToken(String token) {
+        this.sessionToken = token;
+        logger.logEvent("P2PManager : token de session P2P reçu.");
+    }
+
+    public String getSessionToken() {
+        return sessionToken;
+    }
+
     public boolean canSetSecret(String playerName) {
         if (!secretRestrictedToAdmin) {
             return true;
@@ -838,6 +855,7 @@ public class P2PManager {
         roomAdminName        = null;
         adminIsPlayer        = false;
         waitingForFeedback   = false;
+        sessionToken         = null;
         playersInOrder.clear();
         initialPlayersInOrder.clear();
         currentTurnIndex     = 0;

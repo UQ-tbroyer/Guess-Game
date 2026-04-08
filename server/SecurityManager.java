@@ -111,7 +111,7 @@ public class SecurityManager {
      * true = TLS, HMAC et rate limiting sont actifs (mode production).
      * false = toutes les opérations de sécurité deviennent des no-ops (mode dev/test).
      */
-    public static final boolean SECURITY_ENABLED = false;
+    public static final boolean SECURITY_ENABLED = true;
 
     // -------------------------------------------------------------------------
     // État
@@ -556,6 +556,46 @@ public class SecurityManager {
 
     /** @return true si HMAC est actif */
     public boolean isHmacEnabled() { return hmacEnabled; }
+
+    // -------------------------------------------------------------------------
+    // TLS client mode
+    // -------------------------------------------------------------------------
+
+    /**
+     * Encapsule un socket TCP dans un SSLSocket TLS (mode client).
+     * À utiliser côté client qui initie la connexion (GGClient → GGServer, P2P sortant).
+     * Si TLS est désactivé, retourne le socket original sans modification.
+     *
+     * @param rawSocket socket TCP non chiffré
+     * @return SSLSocket si TLS activé, sinon rawSocket
+     * @throws IOException si l'encapsulation TLS échoue
+     */
+    public Socket wrapTlsClient(Socket rawSocket) throws IOException {
+        if (!SECURITY_ENABLED || !tlsEnabled || sslContext == null) {
+            return rawSocket;
+        }
+
+        SSLSocketFactory factory = sslContext.getSocketFactory();
+        SSLSocket sslSocket = (SSLSocket) factory.createSocket(
+                rawSocket,
+                rawSocket.getInetAddress().getHostAddress(),
+                rawSocket.getPort(),
+                true   // autoClose
+        );
+        sslSocket.setUseClientMode(true);
+        try {
+            sslSocket.startHandshake();
+        } catch (IOException e) {
+            try { sslSocket.close(); } catch (IOException ignored) {}
+            throw e;
+        }
+
+        DebugLogger.getInstance().logEvent(
+                "[SecurityManager] TLS client handshake réussi avec " +
+                        rawSocket.getInetAddress().getHostAddress()
+        );
+        return sslSocket;
+    }
 
     // -------------------------------------------------------------------------
     // Utilitaires internes

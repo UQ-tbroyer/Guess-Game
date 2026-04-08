@@ -168,9 +168,23 @@ public class PeerListener extends Thread {
         try {
             msg.requireFields(1);
             String remoteName = msg.getField(0);
+            String receivedToken = (msg.getFieldCount() >= 2) ? msg.getField(1) : "";
+
+            // Valider le token de session : rejeter les connexions inconnues
+            String expectedToken = p2pManager.getSessionToken();
+            if (expectedToken != null && !expectedToken.isBlank()
+                    && !expectedToken.equals(receivedToken)) {
+                logger.logEvent("PeerListener : HELLO rejeté de " + remoteName
+                        + " — token de session invalide.");
+                System.err.println("[P2P] Connexion rejectée de " + remoteName
+                        + " : token de session invalide.");
+                closeSilently();
+                return;
+            }
+
             if (peerName == null) peerName = remoteName;
             p2pManager.registerIncomingPeer(remoteName, peerSocket);
-            logger.logEvent("PeerListener : HELLO reçu de " + remoteName);
+            logger.logEvent("PeerListener : HELLO authentifié de " + remoteName);
         } catch (ParseException e) {
             logger.logError("PeerListener : HELLO mal formé.", e);
         }

@@ -61,6 +61,15 @@ public class GGServer {
                         + clientSocket.getInetAddress().getHostAddress()
                         + ":" + clientSocket.getPort());
 
+                try {
+                    clientSocket = securityManager.wrapTLS(clientSocket);
+                } catch (IOException e) {
+                    System.err.println("[GGServer] TLS handshake échoué avec "
+                            + clientSocket.getInetAddress().getHostAddress() + " : " + e.getMessage());
+                    try { clientSocket.close(); } catch (IOException ignored) {}
+                    continue;
+                }
+
                 ClientHandler handler = new ClientHandler(clientSocket, this);
                 threadPool.submit(handler);
 

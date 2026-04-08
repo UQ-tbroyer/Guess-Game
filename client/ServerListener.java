@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
+import server.SecurityManager;
 
 
 
@@ -34,6 +35,8 @@ public class ServerListener extends Thread {
     /** Contrôle de la boucle principale. */
     private volatile boolean running = true;
 
+    private final SecurityManager security = new SecurityManager();
+
     // ── Constructeur ────────────────────────────────────────────────────────
 
     /**
@@ -57,7 +60,11 @@ public class ServerListener extends Thread {
             String line;
             while (running && (line = in.readLine()) != null) {
 
-                handleMessage(line.trim());
+                if (!security.verifySignature(line)) {
+                    System.err.println("[ServerListener] HMAC invalide, message ignoré.");
+                    continue;
+                }
+                handleMessage(security.stripSignature(line).trim());
             }
         } catch (IOException e) {
             if (running) {
@@ -278,7 +285,15 @@ public class ServerListener extends Thread {
         int attempts = -1;
         String addressesPart;
 
-        if (parts.length >= 6) {
+        if (parts.length >= 7) {
+            // Format étendu : GG|GAME_STARTED|nom_salle|max_tentatives|admin|token|joueur1:ip:port,...
+            try {
+                attempts = Integer.parseInt(parts[3]);
+            } catch (NumberFormatException e) {
+                System.err.println("[ServerListener] Format de tentative invalide : " + parts[3]);
+            }
+            addressesPart = parts[6];
+        } else if (parts.length >= 6) {
             // Format courant : GG|GAME_STARTED|nom_salle|max_tentatives|admin|joueur1:ip:port,...
             try {
                 attempts = Integer.parseInt(parts[3]);
@@ -302,8 +317,9 @@ public class ServerListener extends Thread {
             return;
         }
 
-        // Extraire le nom de l'admin si format étendu (parts[4])
+        // Extraire le nom de l'admin et le token si format étendu
         String adminName = (parts.length >= 6) ? parts[4] : null;
+        String sessionToken = (parts.length >= 7) ? parts[5] : null;
 
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
@@ -314,6 +330,9 @@ public class ServerListener extends Thread {
             }
             if (adminName != null && !adminName.isBlank()) {
                 p2p.setRoomAdminName(adminName);
+            }
+            if (sessionToken != null && !sessionToken.isBlank()) {
+                p2p.setSessionToken(sessionToken);
             }
             Map<String, String> addresses = parseAddresses(addressesPart);
             p2p.connectToPeers(addresses);

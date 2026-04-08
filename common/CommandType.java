@@ -132,9 +132,10 @@ public enum CommandType {
 
     // --- Info / notifications ---
     /**
-     * Pair → Pair : GG|HELLO|nom_joueur
+     * Pair → Pair : GG|HELLO|nom_joueur|token_session
      * Envoyé dès qu'une connexion P2P sortante est établie pour permettre
-     * à la partie réceptrice d'enregistrer l'expéditeur dans sa map de pairs.
+     * à la partie réceptrice d'authentifier et d'enregistrer l'expéditeur.
+     * Le token de session est fourni par le serveur dans GAME_STARTED.
      */
     HELLO,
 

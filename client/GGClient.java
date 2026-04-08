@@ -4,6 +4,7 @@ import common.DebugLogger;
 import common.MessageParser;
 import java.io.*;
 import java.net.*;
+import server.SecurityManager;
 
 /**
  * GGClient — Point d'entrée principal du client Guess Game.
@@ -35,6 +36,8 @@ public class GGClient {
     private volatile boolean playingServerGame = false;
     private volatile String currentRoom = null;
 
+    private final SecurityManager security = new SecurityManager();
+
     // ── Constructeur ────────────────────────────────────────────────────────
 
     public GGClient(String serverIp, int serverPort, String playerName) {
@@ -52,6 +55,7 @@ public class GGClient {
     public void connect(String ip, String port, int portInt) {
         try {
             serverSocket = new Socket(ip, portInt);
+            serverSocket = security.wrapTlsClient(serverSocket);
             System.out.println("[GGClient] Connecté au serveur " + ip + ":" + portInt);
 
             // Initialisation du gestionnaire P2P
@@ -108,7 +112,8 @@ public class GGClient {
             }
             PrintWriter out = new PrintWriter(
                     new OutputStreamWriter(serverSocket.getOutputStream(), "UTF-8"), true);
-            out.println(msg);
+            String signed = security.signMessage(msg);
+            out.println(signed);
             System.out.println("[GGClient] → Serveur : " + msg);
         } catch (IOException e) {
             System.err.println("[GGClient] Erreur d'envoi : " + e.getMessage());
