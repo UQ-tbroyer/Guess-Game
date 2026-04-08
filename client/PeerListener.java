@@ -1,6 +1,7 @@
 package client;
 
 import common.Color;
+import common.CommandType;
 import common.DebugLogger;
 import common.Message;
 import common.MessageParser;
@@ -79,7 +80,8 @@ public class PeerListener extends Thread {
         try {
             String rawLine;
             while ((rawLine = in.readLine()) != null) {
-                handleRawLine(rawLine.trim());
+                String trimmed = rawLine.trim();
+                handleRawLine(trimmed);
             }
         } catch (IOException e) {
             logger.logError("PeerListener : connexion perdue avec "
@@ -109,12 +111,16 @@ public class PeerListener extends Thread {
         logger.logIncoming(msg);
 
         switch (msg.getCommand()) {
+            case HELLO      -> onHello(msg);
             case SECRET_SET -> onSecretSet(msg);
             case GUESS      -> onGuess(msg);
             case FEEDBACK   -> onFeedback(msg);
             case WINNER     -> onWinner(msg);
             case GAME_OVER  -> onGameOver(msg);
-            case NEW_GAME   -> onNewGame(msg);
+            case NEW_GAME   -> onNewGame();
+            case NEXT_TURN  -> onNextTurn(msg);
+            case TURN_ANNOUNCEMENT -> onTurnAnnouncement(msg);
+            case PLAYER_OUT -> onPlayerOut(msg);
             default         -> logger.logError(
                     "PeerListener : commande P2P inattendue : " + msg.getCommand());
         }
@@ -125,6 +131,22 @@ public class PeerListener extends Thread {
     // -------------------------------------------------------------------------
 
     /**
+     * GG|HELLO|nom_joueur — le pair sortant s'identifie pour que nous puissions
+     * l'enregistrer dans la map peers et lui répondre correctement.
+     */
+    private void onHello(Message msg) {
+        try {
+            msg.requireFields(1);
+            String remoteName = msg.getField(0);
+            if (peerName == null) peerName = remoteName;
+            p2pManager.registerIncomingPeer(remoteName, peerSocket);
+            logger.logEvent("PeerListener : HELLO reçu de " + remoteName);
+        } catch (ParseException e) {
+            logger.logError("PeerListener : HELLO mal formé.", e);
+        }
+    }
+
+    /**
      * GG|SECRET_SET|nom_joueur
      * Identifie le détenteur du secret et met à jour P2PManager.
      */
@@ -132,6 +154,9 @@ public class PeerListener extends Thread {
         try {
             msg.requireFields(1);
             String owner = msg.getField(0);
+
+            // Vérifier si le marqueur RANDOM est présent (Cas 1 : admin joueur)
+            boolean isRandom = msg.getFieldCount() >= 2 && "RANDOM".equalsIgnoreCase(msg.getField(1));
 
             // Identification du pair entrant si pas encore connu
             if (peerName == null) {
@@ -150,17 +175,37 @@ public class PeerListener extends Thread {
                 return;
             }
 
+            // Si le secret doit être posé uniquement par l'admin et que ce n'est pas lui,
+            // ignorer la commande tant que la manche n'est pas finie.
+            if (p2pManager.isSecretRestrictedToAdmin()
+                    && !owner.equals(p2pManager.getRoomAdminName())
+                    && !gameEngine.isGameOver()) {
+                logger.logEvent("PeerListener : SECRET_SET ignoré car seul l'admin ("
+                        + p2pManager.getRoomAdminName() + ") peut définir le secret.");
+                System.out.println("[PeerListener] SECRET_SET bloqué : seul l'admin peut définir le secret pour cette manche.");
+                return;
+            }
+
             // Informe P2PManager du détenteur pour le routage de sendGuess()
             p2pManager.setCurrentSecretOwner(owner);
 
-            if (owner.equals(p2pManager.getPlayerName())) {
-                System.out.println("[PeerListener] Secret défini : vous êtes le détenteur du secret.");
+            if (isRandom) {
+                // Cas 1 : secret aléatoire, l'admin est aussi joueur — ne pas le retirer des tours
+                System.out.println("[GAME] Secret défini par " + owner + " (aléatoire, l'admin joue aussi).");
+                logger.logEvent("PeerListener : SECRET_SET RANDOM par " + owner + " — admin reste dans l'ordre des tours.");
             } else {
-                System.out.println("[PeerListener] Secret défini par " + owner + ". Vous devez deviner.");
+                // Cas 2 : l'admin a choisi le secret — le retirer de l'ordre des tours
+                p2pManager.removePlayerFromTurnOrder(owner);
+                if (owner.equals(p2pManager.getPlayerName())) {
+                    System.out.println("[GAME] Vous êtes le détenteur du secret. Attendez les propositions.");
+                } else {
+                    System.out.println("[GAME] Secret défini par " + owner + ". À vous de deviner !");
+                }
             }
 
             logger.logEvent("Détenteur du secret : " + owner
-                    + (owner.equals(p2pManager.getPlayerName()) ? " (ce client)" : ""));
+                    + (owner.equals(p2pManager.getPlayerName()) ? " (ce client)" : "")
+                    + (isRandom ? " [RANDOM — admin joueur]" : ""));
 
         } catch (ParseException e) {
             logger.logError("PeerListener : SECRET_SET mal formé.", e);
@@ -169,40 +214,79 @@ public class PeerListener extends Thread {
 
     /**
      * GG|GUESS|c1|c2|c3|c4
-     * Reçu par le détenteur du secret — calcule et renvoie le feedback.
+     * Reçu par tous les pairs — seul le détenteur du secret calcule et renvoie le feedback.
      */
     private void onGuess(Message msg) {
+        String guesser = peerName;
+        if (guesser == null) {
+            guesser = p2pManager.getPeerNameBySocket(peerSocket);
+            if (guesser != null) {
+                peerName = guesser;
+            }
+        }
+        if (guesser == null) {
+            guesser = "inconnu";
+        }
+
+        // Vérifier si c'est le tour du guesser
+        if (!p2pManager.isPlayerTurn(guesser)) {
+            logger.logEvent("PeerListener : GUESS de " + guesser + " ignoré car ce n'est pas son tour.");
+            return;
+        }
+
         if (gameEngine.isGameOver()) {
             logger.logEvent("PeerListener : GUESS reçu mais la manche est terminée, message ignoré.");
             return;
         }
         if (!gameEngine.isSecretOwner()) {
-            logger.logError("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
+            logger.logEvent("PeerListener : GUESS reçu mais ce client n'est pas le détenteur.");
             return;
         }
         try {
-            msg.requireFields(GameEngine.COMBINATION_SIZE);
+            if (msg.getFields().size() < GameEngine.COMBINATION_SIZE) {
+                logger.logError("PeerListener : GUESS mal formé (champ manquant).");
+                return;
+            }
+
+            boolean lastAttempt = false;
+            if (msg.getFields().size() > GameEngine.COMBINATION_SIZE) {
+                String marker = msg.getField(GameEngine.COMBINATION_SIZE);
+                lastAttempt = "LAST".equalsIgnoreCase(marker);
+            }
 
             List<Color> guess = new ArrayList<>();
             for (int i = 0; i < GameEngine.COMBINATION_SIZE; i++) {
                 guess.add(Color.fromString(msg.getField(i)));
             }
 
-            String guesser = peerName;
-            if (guesser == null) {
-                guesser = p2pManager.getPeerNameBySocket(peerSocket);
-                if (guesser != null) {
-                    peerName = guesser;
-                }
-            }
-            if (guesser == null) {
-                guesser = "inconnu";
-            }
-
             Feedback feedback = gameEngine.checkGuess(guess, guesser);
 
             logger.logEvent("Feedback pour " + guesser + " : " + feedback);
             p2pManager.sendFeedback(guesser, feedback);
+
+            // Si pas de victoire, gérer le dernier essai ou passer au tour suivant.
+            if (!feedback.isWin()) {
+                if (lastAttempt) {
+                    p2pManager.decrementActivePlayers();
+                    p2pManager.broadcast(MessageParser.serialize(CommandType.PLAYER_OUT, guesser));
+                    p2pManager.removePlayerFromTurnOrder(guesser);
+                    logger.logEvent("PeerListener : " + guesser + " est éliminé après son dernier essai.");
+
+                    if (p2pManager.getTurnOrderSize() == 0) {
+                        p2pManager.broadcast(MessageParser.serialize(CommandType.GAME_OVER, "LOSE", "NONE"));
+                        gameEngine.setGameOver(true);
+                        logger.logEvent("PeerListener : fin de partie, plus aucun joueur actif après le dernier guess de " + guesser + ".");
+                        return;
+                    }
+                    // removePlayerFromTurnOrder (Option A) pointe déjà sur le joueur suivant — pas de nextTurn()
+                } else {
+                    p2pManager.nextTurn();
+                }
+                String nextPlayer = p2pManager.getCurrentTurnPlayer();
+                if (nextPlayer != null) {
+                    p2pManager.broadcast(MessageParser.serialize(CommandType.NEXT_TURN, nextPlayer));
+                }
+            }
 
         } catch (ParseException e) {
             logger.logError("PeerListener : GUESS mal formé.", e);
@@ -212,8 +296,11 @@ public class PeerListener extends Thread {
     /**
      * GG|FEEDBACK|couleurs_correctes|positions_correctes
      */
-    private void onFeedback(Message msg) {
-        try {
+    private void onFeedback(Message msg) {        // Le détenteur du secret ne doit pas voir le feedback des autres joueurs
+        if (gameEngine.isSecretOwner()) {
+            logger.logEvent("PeerListener : FEEDBACK ignoré (ce client est le détenteur du secret).");
+            return;
+        }        try {
             msg.requireFields(2);
             int correctColors    = Integer.parseInt(msg.getField(0));
             int correctPositions = Integer.parseInt(msg.getField(1));
@@ -241,7 +328,8 @@ public class PeerListener extends Thread {
             logger.logEvent(consoleMsg);
             System.out.println("[GAME] " + consoleMsg);
             gameEngine.setGameOver(true);
-            logger.logEvent("PeerListener : manche terminée suite à WINNER.");
+            p2pManager.broadcast("GG|GAME_OVER|WIN|" + winner);
+            logger.logEvent("PeerListener : manche terminée suite à WINNER — GAME_OVER diffusé.");
         } catch (ParseException e) {
             logger.logError("PeerListener : WINNER mal formé.", e);
         }
@@ -252,19 +340,26 @@ public class PeerListener extends Thread {
      */
     private void onGameOver(Message msg) {
         try {
-            String[] fields = msg.getFields().toArray(new String[0]);
-            String result = (fields.length > 0) ? fields[0] : "UNKNOWN";
-            String winner = (fields.length > 1) ? fields[1] : "NONE";
+            List<String> fields = msg.getFields();
+            String result = (!fields.isEmpty()) ? fields.get(0) : "UNKNOWN";
+            String winner = (fields.size() > 1) ? fields.get(1) : "NONE";
 
             if ("WIN".equalsIgnoreCase(result)) {
-                System.out.println("[PeerListener] Partie terminée : victoire de " + winner + " !");
+                // La victoire a déjà été annoncée par WINNER — pas de doublon
             } else if ("LOSE".equalsIgnoreCase(result)) {
-                System.out.println("[PeerListener] Partie terminée : défaite (pas de gagnant)." );
+                System.out.println("[GAME] Partie terminée — personne n'a trouvé le secret.");
             } else {
-                System.out.println("[PeerListener] Partie terminée : résultat inconnu.");
+                System.out.println("[GAME] Partie terminée.");
             }
 
             gameEngine.setGameOver(true);
+            // Indiquer les actions disponibles selon le rôle
+            String adminAfterOver = p2pManager.getRoomAdminName();
+            if (adminAfterOver != null && adminAfterOver.equals(p2pManager.getPlayerName())) {
+                System.out.println("[GAME] Tapez 'newgame' pour lancer une nouvelle manche, ou 'leave <salle>' pour quitter.");
+            } else {
+                System.out.println("[GAME] En attente de la prochaine manche (l'admin peut taper 'newgame'), ou tapez 'leave <salle>' pour quitter.");
+            }
             logger.logEvent("PeerListener : manche terminée (GAME_OVER). result=" + result + " winner=" + winner);
 
             // Notifie le serveur que la partie est bien terminée (pour libérer la room)
@@ -278,9 +373,66 @@ public class PeerListener extends Thread {
     /**
      * GG|NEW_GAME — réinitialise le GameEngine local.
      */
-    private void onNewGame(Message msg) {
-        gameEngine.reset();
-        logger.logEvent("PeerListener : nouvelle manche — GameEngine réinitialisé.");
+    private void onNewGame() {
+        p2pManager.resetForNewGame();
+        System.out.println("[GAME] Nouvelle manche ! Les connexions ont été réinitialisées.");
+        String adminNewGame = p2pManager.getRoomAdminName();
+        if (adminNewGame != null && !adminNewGame.equals(p2pManager.getPlayerName())) {
+            System.out.println("[GAME] En attente que " + adminNewGame + " définisse le secret...");
+        }
+        logger.logEvent("PeerListener : nouvelle manche — état local réinitialisé.");
+    }
+
+    /**
+     * GG|NEXT_TURN|nom_joueur
+     */
+    private void onNextTurn(Message msg) {
+        try {
+            msg.requireFields(1);
+            String nextPlayer = msg.getField(0);
+            p2pManager.setCurrentTurnPlayer(nextPlayer);
+            logger.logEvent("PeerListener : tour passé à " + nextPlayer);
+        } catch (ParseException e) {
+            logger.logError("PeerListener : NEXT_TURN mal formé.", e);
+        }
+    }
+
+    /**
+     * GG|TURN_ANNOUNCEMENT|nom_joueur
+     */
+    private void onTurnAnnouncement(Message msg) {
+        try {
+            msg.requireFields(1);
+            String currentPlayer = msg.getField(0);
+            // Synchronise l'état local avec l'annonce de l'admin (source de vérité)
+            p2pManager.setCurrentTurnPlayer(currentPlayer);
+            System.out.println("[GAME] C'est le tour de " + currentPlayer + " pour deviner.");
+            logger.logEvent("PeerListener : annonce du tour pour " + currentPlayer);
+        } catch (ParseException e) {
+            logger.logError("PeerListener : TURN_ANNOUNCEMENT mal formé.", e);
+        }
+    }
+
+    /**
+     * GG|PLAYER_OUT|nom_joueur
+     */
+    private void onPlayerOut(Message msg) {
+        try {
+            msg.requireFields(1);
+            String outPlayer = msg.getField(0);
+            p2pManager.decrementActivePlayers();
+            p2pManager.removePlayerFromTurnOrder(outPlayer);
+            System.out.println("[GAME] " + outPlayer + " a épuisé ses tentatives.");
+            logger.logEvent("PeerListener : " + outPlayer + " est out, joueurs actifs restants : " + p2pManager.getActivePlayersCount());
+            // Si le détenteur du secret et plus aucun joueur actif, finir la partie
+            if (gameEngine.isSecretOwner() && p2pManager.getActivePlayersCount() == 0) {
+                p2pManager.broadcast(MessageParser.serialize(CommandType.GAME_OVER, "LOSE", "NONE"));
+                gameEngine.setGameOver(true);
+                System.out.println("[PeerListener] Partie terminée : tous les joueurs ont épuisé leurs tentatives.");
+            }
+        } catch (ParseException e) {
+            logger.logError("PeerListener : PLAYER_OUT mal formé.", e);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -288,8 +440,11 @@ public class PeerListener extends Thread {
     // -------------------------------------------------------------------------
 
     private void closeSilently() {
-        try { if (!peerSocket.isClosed()) peerSocket.close(); }
-        catch (IOException ignored) {}
+        try {
+            if (!peerSocket.isClosed()) {
+                peerSocket.close();
+            }
+        } catch (IOException ignored) {}
     }
 
     public String getPeerName() { return peerName; }

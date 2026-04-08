@@ -93,6 +93,24 @@ public enum CommandType {
     WINNER,
 
     /**
+     * Propriétaire → Tous les pairs :
+     * GG|NEXT_TURN|nom_joueur
+     */
+    NEXT_TURN,
+
+    /**
+     * Propriétaire → Tous les pairs :
+     * GG|TURN_ANNOUNCEMENT|nom_joueur
+     */
+    TURN_ANNOUNCEMENT,
+
+    /**
+     * Joueur → Tous les pairs :
+     * GG|PLAYER_OUT|nom_joueur
+     */
+    PLAYER_OUT,
+
+    /**
      * Admin → Tous les pairs :
      * GG|NEW_GAME
      * Déclenche la réinitialisation de l'état du jeu chez tous les clients.
@@ -100,12 +118,19 @@ public enum CommandType {
     NEW_GAME,
 
     /**
-     * Serveur → Client/Pairs : GG|GAME_OVER|WIN|joueur or GG|GAME_OVER|LOSE|NONE
-     * Signale la fin d'une partie (solo ou salle) avec le résultat.
+     * Client → Serveur : GG|GAME_OVER|WIN|joueur or GG|GAME_OVER|LOSE|NONE
+     * Notifie la fin d'une partie P2P pour permettre la réutilisation de la salle.
      */
     GAME_OVER,
 
     // --- Info / notifications ---
+    /**
+     * Pair → Pair : GG|HELLO|nom_joueur
+     * Envoyé dès qu'une connexion P2P sortante est établie pour permettre
+     * à la partie réceptrice d'enregistrer l'expéditeur dans sa map de pairs.
+     */
+    HELLO,
+
     /**
      * Serveur → Client : GG|INFO|message
      * Message d'information générale affiché au client.

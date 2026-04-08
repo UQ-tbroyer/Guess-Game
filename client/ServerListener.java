@@ -2,6 +2,7 @@ package client;
 
 import java.io.*;
 import java.net.*;
+import java.util.Map;
 
 /**
  * ServerListener — Thread d'écoute passive du serveur.
@@ -52,7 +53,6 @@ public class ServerListener extends Thread {
         try {
             String line;
             while (running && (line = in.readLine()) != null) {
-                System.out.println("[ServerListener] ← Serveur : " + line);
                 handleMessage(line.trim());
             }
         } catch (IOException e) {
@@ -87,12 +87,6 @@ public class ServerListener extends Thread {
         }
 
         String type = parts[1];
-
-        // Affichage structuré du type et des champs (requis par l'énoncé)
-        System.out.println("[ServerListener] Type    : " + type);
-        for (int i = 2; i < parts.length; i++) {
-            System.out.println("[ServerListener] Champ " + (i - 1) + " : " + parts[i]);
-        }
 
         switch (type) {
 
@@ -161,7 +155,7 @@ public class ServerListener extends Thread {
 
             // ── Nouveau jeu ──────────────────────────────────────────────
             case "NEW_GAME":
-                onNewGame(parts);
+                onNewGame();
                 break;
 
             case "GAME_OVER":
@@ -255,13 +249,22 @@ public class ServerListener extends Thread {
         String room = (parts.length > 2) ? parts[2] : "?";
         System.out.println("[ServerListener] Vous avez quitté la salle : " + room);
 
-        // Nettoyage post-départ pour éviter rester en état de jeu
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
             p2p.close();
             client.setPlayingServerGame(false);
             System.out.println("[ServerListener] P2P fermé après sortie de la salle.");
         }
+
+        // Recréer un P2PManager avec un nouveau ServerSocket pour pouvoir jouer dans une autre salle
+        P2PManager newP2p = new P2PManager(client.getPlayerName(), client);
+        try {
+            newP2p.startListening(0);
+            System.out.println("[ServerListener] Nouveau serveur P2P prêt sur le port " + newP2p.getListeningPort());
+        } catch (java.io.IOException e) {
+            System.err.println("[ServerListener] Impossible de redémarrer le serveur P2P : " + e.getMessage());
+        }
+        client.setP2PManager(newP2p);
 
         CLIHandler cli = client.getCLIHandler();
         if (cli != null) cli.printPrompt();
@@ -282,6 +285,15 @@ public class ServerListener extends Thread {
                 client.setPlayingServerGame(false);
                 System.out.println("[ServerListener] P2P fermé suite à l'expulsion.");
             }
+            P2PManager newP2p = new P2PManager(client.getPlayerName(), client);
+            try {
+                newP2p.startListening(0);
+                System.out.println("[ServerListener] Nouveau serveur P2P prêt sur le port " + newP2p.getListeningPort());
+            } catch (java.io.IOException e) {
+                System.err.println("[ServerListener] Impossible de redémarrer le serveur P2P : " + e.getMessage());
+            }
+            client.setP2PManager(newP2p);
+
             CLIHandler cli = client.getCLIHandler();
             if (cli != null) cli.printPrompt();
         }
@@ -297,10 +309,41 @@ public class ServerListener extends Thread {
     private void onGameStarted(String rawMessage) {
         System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
         System.out.println("[ServerListener] Astuce : si vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.");
+        String[] parts = rawMessage.split("\\|");
+        int attempts = 0;
+        String admin = null;
+        if (parts.length > 3) {
+            try {
+                attempts = Integer.parseInt(parts[3]);
+            } catch (NumberFormatException ignored) {
+                attempts = 0;
+            }
+        }
+        if (parts.length > 4) {
+            admin = parts[4];
+        }
+        if (attempts > 0) {
+            System.out.println("[ServerListener] Tentatives par joueur : " + attempts);
+        }
+        if (admin != null && !admin.isBlank()) {
+            System.out.println("[ServerListener] Admin de la salle : " + admin);
+        }
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
-            // On passe le message brut ; P2PManager extrait les adresses
-            p2p.connectToPeers(parseAddresses(rawMessage));
+            p2p.resetForNewGame();
+            if (attempts > 0) {
+                p2p.getGameEngine().setMaxAttempts(attempts);
+            }
+            if (admin != null) {
+                p2p.setRoomAdminName(admin);
+            }
+            Map<String, String> peerAddresses = parseAddresses(rawMessage);
+            p2p.connectToPeers(peerAddresses);
+            // Set players list for turns (admin inclus par défaut, sera retiré si Cas 2)
+            java.util.Set<String> playersSet = new java.util.LinkedHashSet<>(peerAddresses.keySet());
+            playersSet.add(client.getPlayerName());
+            java.util.List<String> players = new java.util.ArrayList<>(playersSet);
+            p2p.setPlayersList(players);
         }
     }
 
@@ -327,10 +370,13 @@ public class ServerListener extends Thread {
             System.err.println("[ServerListener] FEEDBACK mal formé.");
             return;
         }
-        System.out.println("[ServerListener] Feedback solo : " + parts[2] + " couleurs correctes, " + parts[3] + " positions correctes.");
-        if (parts.length > 3 && Integer.parseInt(parts[3]) == GameEngine.COMBINATION_SIZE) {
-            System.out.println("[ServerListener] Bravo, vous avez gagné la partie solo !");
-            client.setPlayingServerGame(false);
+        System.out.println("[GAME] Feedback : " + parts[2] + " couleur(s) correcte(s), " + parts[3] + " position(s) correcte(s).");
+        P2PManager p2p = client.getP2PManager();
+        int attLeft = (p2p != null) ? p2p.getGameEngine().getAttemptsLeft() : 0;
+        if (attLeft > 0) {
+            System.out.println("[GAME] Tentatives restantes : " + attLeft);
+        } else {
+            System.out.println("[GAME] Plus de tentatives. En attente du résultat...");
         }
     }
 
@@ -338,13 +384,12 @@ public class ServerListener extends Thread {
      * Annonce du gagnant pour la partie solo (serveur -> client).
      */
     private void onServerWinner(String[] parts) {
-        String winner = (parts.length > 2) ? parts[2] : "?";
-        System.out.println("[ServerListener] WINNER : " + winner);
+        // La victoire sera annoncée par GAME_OVER — pas de doublon ici
         client.setPlayingServerGame(false);
     }
 
     /** Nouveau jeu dans la salle — réinitialise l'état local. */
-    private void onNewGame(String[] parts) {
+    private void onNewGame() {
         System.out.println("[ServerListener] Nouveau jeu ! Réinitialisation de l'état local.");
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) p2p.resetForNewGame();
@@ -359,13 +404,11 @@ public class ServerListener extends Thread {
         String winner = (parts.length > 3) ? parts[3] : "NONE";
 
         if ("WIN".equalsIgnoreCase(result)) {
-            System.out.println("[ServerListener] Partie terminée : victoire de " + winner);
-            System.out.println("[ServerListener] La partie est terminée. Félicitations !");
+            System.out.println("[GAME] ★★★ Partie terminée — victoire de " + winner + " ! ★★★");
         } else if ("LOSE".equalsIgnoreCase(result)) {
-            System.out.println("[ServerListener] Partie terminée : défait (pas de gagnant).\n");
-            System.out.println("[ServerListener] La partie est terminée.");
+            System.out.println("[GAME] Partie terminée — personne n'a trouvé le secret.");
         } else {
-            System.out.println("[ServerListener] Partie terminée : résultat inconnu.");
+            System.out.println("[GAME] Partie terminée.");
         }
 
         client.setPlayingServerGame(false);
@@ -382,8 +425,17 @@ public class ServerListener extends Thread {
         String[] parts = rawMessage.split("\\|");
         if (parts.length < 4) return addresses;
 
-        // parts[3] = "joueur1:ip1:port1,joueur2:ip2:port2"
-        String[] entries = parts[3].split(",");
+        String payload;
+        if (parts.length >= 6) {
+            payload = parts[5];
+        } else if (parts.length >= 5) {
+            payload = parts[4];
+        } else {
+            payload = parts[3];
+        }
+
+        // payload = "joueur1:ip1:port1,joueur2:ip2:port2"
+        String[] entries = payload.split(",");
         for (String entry : entries) {
             String[] tokens = entry.trim().split(":");
             if (tokens.length == 3) {

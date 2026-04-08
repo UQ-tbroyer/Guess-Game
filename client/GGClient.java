@@ -1,5 +1,6 @@
 package client;
 
+import common.DebugLogger;
 import common.MessageParser;
 import java.io.*;
 import java.net.*;
@@ -152,6 +153,7 @@ public class GGClient {
     }
 
     public P2PManager getP2PManager()      { return p2pManager;  }
+    public void       setP2PManager(P2PManager p2p) { this.p2pManager = p2p; }
     public int        getP2PPort()          { return p2pManager != null ? p2pManager.getListeningPort() : 0; }
     public CLIHandler getCLIHandler()      { return cliHandler;  }
     public boolean    isPlayingServerGame() { return playingServerGame; }
@@ -177,6 +179,13 @@ public class GGClient {
         String ip         = (args.length > 0) ? args[0] : "127.0.0.1";
         int    port       = (args.length > 1) ? Integer.parseInt(args[1]) : 5000;
         String playerName = (args.length > 2) ? args[2] : "Player";
+
+        // Activer les logs debug via --debug (optionnel)
+        boolean debug = false;
+        for (String arg : args) {
+            if ("--debug".equalsIgnoreCase(arg)) { debug = true; break; }
+        }
+        DebugLogger.getInstance().setEnabled(debug);
 
         GGClient client = new GGClient(ip, port, playerName);
         client.connect();

@@ -36,6 +36,9 @@ public class GameEngine {
     /** Nombre de tentatives restantes pour la manche courante. */
     private int attemptsLeft;
 
+    /** Nombre maximum de tentatives autorisées pour cette manche. */
+    private int maxAttempts;
+
     /** Vrai si ce client détient la combinaison secrète cette manche. */
     private boolean isSecretOwner;
 
@@ -54,6 +57,7 @@ public class GameEngine {
     public GameEngine() {
         this.secretCombination = null;
         this.attemptsLeft      = 0;
+        this.maxAttempts       = 0;
         this.isSecretOwner     = false;
         this.gameOver         = false;
         this.guessHistory      = new ArrayList<>();
@@ -90,6 +94,23 @@ public class GameEngine {
     }
 
     /**
+     * Génère une combinaison secrète aléatoire de COMBINATION_SIZE couleurs.
+     * Utilisé lorsque l'admin ne définit pas de secret (Cas 1 : admin joueur).
+     * L'admin ne voit pas le secret généré.
+     */
+    public void generateRandomSecret() {
+        List<Color> pool = new ArrayList<>(java.util.Arrays.asList(Color.values()));
+        java.util.Collections.shuffle(pool);
+        List<Color> combo = new ArrayList<>(COMBINATION_SIZE);
+        for (int i = 0; i < COMBINATION_SIZE; i++) {
+            combo.add(pool.get(i % pool.size()));
+        }
+        this.secretCombination = new ArrayList<>(combo);
+        this.isSecretOwner = true;
+        logger.logEvent("Secret aléatoire généré (valeur masquée pour le joueur).");
+    }
+
+    /**
      * Configure le nombre de tentatives pour cette manche.
      * Appelé lors de la réception de GAME_STARTED ou SERVER_GAME_STARTED.
      *
@@ -99,9 +120,37 @@ public class GameEngine {
         if (maxAttempts <= 0) {
             throw new IllegalArgumentException("Le nombre de tentatives doit être positif.");
         }
+        this.maxAttempts = maxAttempts;
         this.attemptsLeft = maxAttempts;
         this.gameOver = false;
         logger.logEvent("Tentatives configurées : " + maxAttempts);
+    }
+
+    /**
+     * Vérifie si ce client peut encore proposer une combinaison.
+     * Les tentatives illimitées sont représentées par attemptsLeft == 0.
+     */
+    public boolean canMakeGuess() {
+        return !gameOver && (attemptsLeft == 0 || attemptsLeft > 0);
+    }
+
+    /**
+     * Consomme une tentative locale lors de l'envoi d'une proposition.
+     * @return true si la tentative a été consommée ou si les tentatives sont illimitées.
+     */
+    public boolean consumeAttempt() {
+        if (gameOver) {
+            return false;
+        }
+        if (attemptsLeft == 0) {
+            return true; // illimité
+        }
+        attemptsLeft--;
+        if (attemptsLeft == 0) {
+            gameOver = true;
+            logger.logEvent("GameEngine : plus de tentatives, manche terminée.");
+        }
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -181,16 +230,11 @@ public class GameEngine {
         guessHistory.add(record);
         logger.logEvent("Proposition enregistrée :\n" + record.toTraceString());
 
-        // Décrémenter les tentatives (0 si non configuré = illimité)
-        if (attemptsLeft > 0) attemptsLeft--;
-
-        // Détecter fin de manche
+        // Détecter victoire uniquement. La consommation des tentatives est gérée
+        // par le client qui envoie la proposition.
         if (correctPositions == COMBINATION_SIZE) {
             gameOver = true;
             logger.logEvent("GameEngine : victoire déclarée pour " + playerName + ".");
-        } else if (attemptsLeft == 0) {
-            gameOver = true;
-            logger.logEvent("GameEngine : plus de tentatives, manche terminée.");
         }
 
         return new Feedback(correctColors, correctPositions);
@@ -206,8 +250,9 @@ public class GameEngine {
      */
     public void reset() {
         this.secretCombination = null;
-        this.attemptsLeft      = 0;
+        this.attemptsLeft      = maxAttempts;
         this.isSecretOwner     = false;
+        this.gameOver          = false;
         this.guessHistory.clear();
         logger.logEvent("GameEngine réinitialisé pour une nouvelle manche.");
     }

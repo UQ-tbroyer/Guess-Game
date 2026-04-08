@@ -27,6 +27,7 @@ public class GGServer {
             new ConcurrentHashMap<>();
 
     private final PermissionManager permissionManager = new PermissionManager();
+    private final SecurityManager securityManager = new SecurityManager();
 
     private final int port;
     private ServerSocket serverSocket;
@@ -178,6 +179,7 @@ public class GGServer {
     }
 
     public PermissionManager getPermissionManager()                       { return permissionManager;  }
+    public SecurityManager getSecurityManager()                           { return securityManager;    }
     public ConcurrentHashMap<String, ClientHandler> getConnectedClients() { return connectedClients;   }
     public ConcurrentHashMap<String, Room> getRooms()                     { return rooms;              }
     public boolean isRunning()                                            { return running;            }

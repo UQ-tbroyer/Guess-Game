@@ -40,6 +40,7 @@ public class ClientHandler implements Runnable {
     private final Socket           socket;
     private final GGServer         server;
     private final PermissionManager permissions;
+    private final SecurityManager   security;
 
     private final BufferedReader   in;
     private final PrintWriter      out;
@@ -68,6 +69,7 @@ public class ClientHandler implements Runnable {
         this.socket      = socket;
         this.server      = server;
         this.permissions = server.getPermissionManager();
+        this.security    = server.getSecurityManager();
         this.clientIp    = socket.getInetAddress().getHostAddress();
         this.in  = new BufferedReader(
                 new InputStreamReader(socket.getInputStream(), "UTF-8"));
@@ -102,6 +104,18 @@ public class ClientHandler implements Runnable {
 
     private void handleRawLine(String rawLine) {
         if (rawLine == null || rawLine.isEmpty()) return;
+
+        if (!security.verifySignature(rawLine)) {
+            sendError("Signature HMAC invalide.");
+            return;
+        }
+        rawLine = security.stripSignature(rawLine);
+
+        String clientIdentifier = (playerName != null) ? playerName : clientIp;
+        if (!security.checkRateLimit(clientIdentifier)) {
+            sendError("Rate limit dépassé. Veuillez ralentir.");
+            return;
+        }
 
         Message msg;
         try {
@@ -152,7 +166,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String name = msg.getField(0).trim();
+        String name = security.sanitize(msg.getField(0).trim());
 
         if (name.isEmpty()) {
             sendError("Le nom de joueur ne peut pas être vide.");
@@ -187,7 +201,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String roomName = msg.getField(0).trim();
+        String roomName = security.sanitize(msg.getField(0).trim());
         int maxPlayers, maxAttempts;
 
         try {
@@ -243,7 +257,7 @@ public class ClientHandler implements Runnable {
      * Retourne la liste des salles disponibles.
      * Réponse : GG|ROOM_LIST|salle1,salle2,...
      */
-    private void onListRooms(Message msg) {
+    private void onListRooms(@SuppressWarnings("unused") Message msg) {
         String list = server.getRoomListAsString();
         if (list.isEmpty()) list = "(aucune salle disponible)";
         send(MessageParser.serialize(CommandType.ROOM_LIST, list));
@@ -263,7 +277,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String roomName = msg.getField(0).trim();
+        String roomName = security.sanitize(msg.getField(0).trim());
         Room room = server.getRoom(roomName);
 
         if (room == null) {
@@ -340,7 +354,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String roomName = msg.getField(0).trim();
+        String roomName = security.sanitize(msg.getField(0).trim());
         leaveRoom(roomName);
     }
 
@@ -357,8 +371,8 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String roomName  = msg.getField(0).trim();
-        String targetName = msg.getField(1).trim();
+        String roomName  = security.sanitize(msg.getField(0).trim());
+        String targetName = security.sanitize(msg.getField(1).trim());
         Room room = server.getRoom(roomName);
 
         if (room == null) {
@@ -409,7 +423,7 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        String roomName = msg.getField(0).trim();
+        String roomName = security.sanitize(msg.getField(0).trim());
         Room room = server.getRoom(roomName);
 
         if (room == null) {
@@ -432,18 +446,21 @@ public class ClientHandler implements Runnable {
 
         room.setGameInProgress(true);
 
-        // GG|GAME_STARTED|nom_salle|joueur1:ip1:port1,joueur2:ip2:port2,...
+        // GG|GAME_STARTED|nom_salle|max_tentatives|admin|joueur1:ip1:port1,joueur2:ip2:port2,...
         String gameStartedMsg = MessageParser.serialize(CommandType.GAME_STARTED,
-                roomName, room.getGameStartedPayload());
+                roomName,
+                String.valueOf(room.getMaxAttempts()),
+                room.getAdminName(),
+                room.getGameStartedPayload());
         broadcastToRoom(room, gameStartedMsg);
 
         // Notifier explicitement l'admin qu'il peut choisir le secret en P2P
-        String adminInfo = "Partie démarrée : vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.";
+        String adminInfo = "Partie démarrée : vous êtes admin. Tapez 'secret c1 c2 c3 c4' pour définir le secret (vous ne jouerez pas), ou 'secret' pour un secret aléatoire (vous jouerez aussi).";
         send(MessageParser.serialize(CommandType.INFO, adminInfo));
 
-        // Rafraîchir la salle pour tout le monde, évite que l'admin pense qu'il n'a pas reçu l'info
-        broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
-                "ADMIN: après GAME_STARTED, tapez 'secret c1 c2 c3 c4' pour commencer à recevoir des guesses."));
+        // Informer tous les autres joueurs qu'une partie a démarré et qu'ils attendent le secret
+        broadcastToRoomExcept(room, MessageParser.serialize(CommandType.INFO,
+                "Partie démarrée : en attente que l'admin définisse le secret."), playerName);
 
         logger.logEvent("Partie démarrée dans la salle : " + roomName
                 + " | Joueurs : " + room.getPlayersAsString());
@@ -568,17 +585,16 @@ public class ClientHandler implements Runnable {
 
             if (feedback.isWin()) {
                 send(MessageParser.serialize(common.CommandType.WINNER, playerName));
-            send(MessageParser.serialize(common.CommandType.GAME_OVER, "WIN", playerName));
-            server.removeSoloSession(playerName);
-            return;
-        }
+                send(MessageParser.serialize(common.CommandType.GAME_OVER, "WIN", playerName));
+                server.removeSoloSession(playerName);
+                return;
+            }
 
-        if (session.isFinished()) {
-            // Partie perdue (tentatives épuisées)
-            send(MessageParser.serialize(common.CommandType.GAME_OVER, "LOSE", "NONE"));
-            server.removeSoloSession(playerName);
-            return;
-        }
+            if (session.isFinished()) {
+                // Partie perdue (tentatives épuisées)
+                send(MessageParser.serialize(common.CommandType.GAME_OVER, "LOSE", "NONE"));
+                server.removeSoloSession(playerName);
+            }
 
         } catch (common.ParseException e) {
             sendError("Couleur invalide dans GUESS : " + e.getMessage());
@@ -599,6 +615,7 @@ public class ClientHandler implements Runnable {
     private void handleDisconnect() {
         logger.logEvent("Déconnexion de : " + (playerName != null ? playerName : clientIp));
 
+        security.resetRateLimit(playerName != null ? playerName : clientIp);
         if (playerName != null) {
             // Quitter la salle proprement si on y était
             if (currentRoom != null) {
@@ -657,8 +674,9 @@ public class ClientHandler implements Runnable {
      * @param rawMessage message GG complet (ex: "GG|CONNECTED|Alice")
      */
     public synchronized void send(String rawMessage) {
-        logger.logOutgoingRaw(rawMessage);
-        out.println(rawMessage);
+        String signedMessage = security.signMessage(rawMessage);
+        logger.logOutgoingRaw(signedMessage);
+        out.println(signedMessage);
     }
 
     /**
@@ -678,6 +696,18 @@ public class ClientHandler implements Runnable {
      */
     private void broadcastToRoom(Room room, String rawMessage) {
         for (String pName : room.getPlayerNames()) {
+            ClientHandler handler = server.getClient(pName);
+            if (handler != null) {
+                handler.send(rawMessage);
+            }
+        }
+    }
+
+    private void broadcastToRoomExcept(Room room, String rawMessage, String excludedPlayerName) {
+        for (String pName : room.getPlayerNames()) {
+            if (excludedPlayerName != null && excludedPlayerName.equals(pName)) {
+                continue;
+            }
             ClientHandler handler = server.getClient(pName);
             if (handler != null) {
                 handler.send(rawMessage);

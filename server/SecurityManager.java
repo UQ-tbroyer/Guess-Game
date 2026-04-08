@@ -1,14 +1,6 @@
 package server;
 
 import common.DebugLogger;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManagerFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.Socket;
@@ -19,6 +11,13 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
 
 /**
  * Gestionnaire de sécurité côté serveur.
@@ -70,6 +69,15 @@ public class SecurityManager {
 
     /** Séparateur HMAC ajouté à la fin d'un message signé. */
     private static final String HMAC_SEPARATOR = "##";
+
+    /**
+     * Interrupteur global de sécurité.
+     * Mettre à true pour activer TLS, HMAC et rate limiting en production.
+     * Laisser à false pendant le développement/les tests : toutes les opérations
+     * de sécurité deviennent des no-ops transparents.
+     * TODO : passer à true avant la mise en production.
+     */
+    public static final boolean SECURITY_ENABLED = true;
 
     // -------------------------------------------------------------------------
     // État
@@ -185,7 +193,7 @@ public class SecurityManager {
      * @throws IOException si l'encapsulation TLS échoue
      */
     public Socket wrapTLS(Socket rawSocket) throws IOException {
-        if (!tlsEnabled || sslContext == null) {
+        if (!SECURITY_ENABLED || !tlsEnabled || sslContext == null) {
             DebugLogger.getInstance().logEvent(
                     "[SecurityManager] TLS désactivé — socket utilisé sans chiffrement."
             );
@@ -223,7 +231,7 @@ public class SecurityManager {
      * @return la ligne signée
      */
     public String signMessage(String rawLine) {
-        if (!hmacEnabled || hmacKey == null) {
+        if (!SECURITY_ENABLED || !hmacEnabled || hmacKey == null) {
             return rawLine;
         }
         try {
@@ -248,7 +256,7 @@ public class SecurityManager {
      * @return true si la signature est valide ou si HMAC est désactivé
      */
     public boolean verifySignature(String signedLine) {
-        if (!hmacEnabled || hmacKey == null) {
+        if (!SECURITY_ENABLED || !hmacEnabled || hmacKey == null) {
             return true;
         }
         if (signedLine == null || !signedLine.contains(HMAC_SEPARATOR)) {
@@ -305,6 +313,7 @@ public class SecurityManager {
      * @return true si le message est autorisé, false si le joueur est throttlé
      */
     public boolean checkRateLimit(String playerName) {
+        if (!SECURITY_ENABLED) return true;
         RateLimitEntry entry = rateLimitMap.computeIfAbsent(
                 playerName, k -> new RateLimitEntry()
         );

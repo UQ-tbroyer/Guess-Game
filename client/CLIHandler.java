@@ -61,6 +61,9 @@ public class CLIHandler extends Thread {
             } catch (IllegalStateException e) {
                 // Scanner fermé
                 break;
+            } catch (RuntimeException e) {
+                System.err.println("[CLIHandler] Erreur inattendue : " + e.getMessage());
+                printPrompt();
             }
         }
         System.out.println("[CLIHandler] Interface CLI terminée.");
@@ -93,7 +96,11 @@ public class CLIHandler extends Thread {
                 if (tokens.length < 4) { printUsage("connect <ip> <port> <playerName>"); break; }
                 client.setPlayerName(tokens[3]);
                 client.setConnected(false);
-                client.connect(tokens[1], tokens[2], Integer.parseInt(tokens[2]));
+                try {
+                    client.connect(tokens[1], tokens[2], Integer.parseInt(tokens[2]));
+                } catch (NumberFormatException e) {
+                    System.out.println("[CLIHandler] Port invalide : '" + tokens[2] + "'. Entrez un nombre entier.");
+                }
                 break;
 
             case "disconnect":
@@ -165,9 +172,32 @@ public class CLIHandler extends Thread {
                     break;
                 }
 
+                if (!p2pSec.canSetSecret(client.getPlayerName())) {
+                    System.out.println("[CLIHandler] Seul l'admin peut définir le secret pour cette manche.");
+                    break;
+                }
+
+                if (p2pSec.getGameEngine().isSecretOwner()) {
+                    System.out.println("[CLIHandler] Secret déjà défini pour cette manche. Attendez 'newgame'.");
+                    break;
+                }
+
                 if (tokens.length == 1) {
-                    // Annonce l'auteur (format existant) sans définir de combinaison
-                    p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+                    // Cas 1 : aucun secret entré → secret aléatoire, admin devient joueur
+                    p2pSec.generateRandomSecret();
+                    p2pSec.setAdminIsPlayer(true);
+                    p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName() + "|RANDOM");
+                    p2pSec.announceCurrentTurnIfSecretDefined();
+                    // Indiquer localement qui commence (l'admin ne reçoit pas ses propres broadcasts)
+                    String firstPlayer = p2pSec.getCurrentTurnPlayer();
+                    if (firstPlayer != null) {
+                        if (firstPlayer.equals(client.getPlayerName())) {
+                            System.out.println("[GAME] La partie commence ! C'est votre tour de deviner.");
+                        } else {
+                            System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
+                        }
+                    }
+                    System.out.println("[CLIHandler] Secret aléatoire généré. Vous êtes aussi joueur.");
                 } else if (tokens.length == GameEngine.COMBINATION_SIZE + 1) {
                     try {
                         java.util.List<Color> combo = new java.util.ArrayList<>();
@@ -176,7 +206,15 @@ public class CLIHandler extends Thread {
                         }
                         p2pSec.setSecret(combo);
                         p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
-                        System.out.println("[CLIHandler] Secret défini. Envoyé aux pairs.");
+                        // Cas 2 : admin a défini le secret → il n'est pas joueur, le retirer de l'ordre des tours
+                        p2pSec.removePlayerFromTurnOrder(client.getPlayerName());
+                        p2pSec.announceCurrentTurnIfSecretDefined();
+                        // Indiquer localement qui commence (l'admin ne reçoit pas ses propres broadcasts)
+                        String firstPlayer = p2pSec.getCurrentTurnPlayer();
+                        if (firstPlayer != null) {
+                            System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
+                        }
+                        System.out.println("[CLIHandler] Secret défini. Vous n'êtes pas joueur cette manche. Envoyé aux pairs.");
                     } catch (ParseException e) {
                         System.out.println("[CLIHandler] Couleur invalide : " + e.getMessage());
                     } catch (IllegalStateException | IllegalArgumentException e) {
@@ -190,20 +228,28 @@ public class CLIHandler extends Thread {
             case "guess":
                 // Usage : guess <c1> <c2> <c3> <c4>
                 if (tokens.length < 5) { printUsage("guess <RED|GREEN|BLUE|YELLOW|ORANGE> x4"); break; }
-                String guess = "GG|GUESS|" + tokens[1].toUpperCase()
-                             + "|" + tokens[2].toUpperCase()
-                             + "|" + tokens[3].toUpperCase()
-                             + "|" + tokens[4].toUpperCase();
-
                 if (client.isPlayingServerGame()) {
-                    client.sendToServer(guess);
+                    client.sendToServer("GG|GUESS|" + tokens[1].toUpperCase()
+                                       + "|" + tokens[2].toUpperCase()
+                                       + "|" + tokens[3].toUpperCase()
+                                       + "|" + tokens[4].toUpperCase());
+                    // Suivi local des tentatives pour affichage
+                    P2PManager p2pSolo = client.getP2PManager();
+                    if (p2pSolo != null) p2pSolo.getGameEngine().consumeAttempt();
                 } else {
                     P2PManager p2pG = client.getP2PManager();
                     if (p2pG != null) {
+                        if (!p2pG.isPlayerTurn(client.getPlayerName())) {
+                            System.out.println("[CLIHandler] Ce n'est pas votre tour. Attendez le tour de " + p2pG.getCurrentTurnPlayer() + ".");
+                            break;
+                        }
                         p2pG.sendGuess(java.util.Arrays.asList(
                                 tokens[1], tokens[2], tokens[3], tokens[4]));
                     } else {
-                        client.sendToServer(guess);
+                        client.sendToServer("GG|GUESS|" + tokens[1].toUpperCase()
+                                           + "|" + tokens[2].toUpperCase()
+                                           + "|" + tokens[3].toUpperCase()
+                                           + "|" + tokens[4].toUpperCase());
                     }
                 }
                 break;
@@ -211,13 +257,17 @@ public class CLIHandler extends Thread {
             case "feedback":
                 // Usage : feedback <couleurs_correctes> <positions_correctes>
                 if (tokens.length < 3) { printUsage("feedback <correctColors> <correctPositions>"); break; }
-                int correct = Integer.parseInt(tokens[1]);
-                int placed  = Integer.parseInt(tokens[2]);
-                P2PManager p2pF = client.getP2PManager();
-                if (p2pF != null) {
-                    p2pF.sendFeedback(correct, placed);
-                } else {
-                    client.sendToServer("GG|FEEDBACK|" + correct + "|" + placed);
+                try {
+                    int correct = Integer.parseInt(tokens[1]);
+                    int placed  = Integer.parseInt(tokens[2]);
+                    P2PManager p2pF = client.getP2PManager();
+                    if (p2pF != null) {
+                        p2pF.sendFeedback(correct, placed);
+                    } else {
+                        client.sendToServer("GG|FEEDBACK|" + correct + "|" + placed);
+                    }
+                } catch (NumberFormatException e) {
+                    System.out.println("[CLIHandler] Valeur invalide. Usage : feedback <entier> <entier>");
                 }
                 break;
 
@@ -233,7 +283,12 @@ public class CLIHandler extends Thread {
             case "newgame":
                 P2PManager p2pN = client.getP2PManager();
                 if (p2pN != null) {
+                    p2pN.resetForNewGame();
                     p2pN.broadcast("GG|NEW_GAME");
+                    // L'admin ne reçoit pas son propre broadcast — informer localement
+                    if (p2pN.getPlayerName().equals(p2pN.getRoomAdminName())) {
+                        System.out.println("[GAME] Nouvelle manche lancée. Définissez le secret avec 'secret' ou 'secret c1 c2 c3 c4'.");
+                    }
                 }
                 break;
 
@@ -262,34 +317,41 @@ public class CLIHandler extends Thread {
      */
     public void printHelp() {
         System.out.println();
-        System.out.println("╔══════════════════════════════════════════════════════════╗");
-        System.out.println("║                  GUESS GAME — Client CLI                 ║");
-        System.out.println("╠══════════════════════════════════════════════════════════╣");
-        System.out.println("║  CONNEXION                                               ║");
-        System.out.println("║    connect <ip> <port> <nom>  Connexion au serveur       ║");
-        System.out.println("║    disconnect / quit          Déconnexion                ║");
-        System.out.println("╠══════════════════════════════════════════════════════════╣");
-        System.out.println("║  SALLES                                                  ║");
-        System.out.println("║    list                       Liste des salles           ║");
-        System.out.println("║    create <salle> <max> <t>   Créer une salle            ║");
-        System.out.println("║    join   <salle>             Rejoindre une salle        ║");
-        System.out.println("║    leave  <salle>             Quitter une salle          ║");
-        System.out.println("║    kick   <salle> <joueur>    Expulser un joueur         ║");
-        System.out.println("║    start  <salle>             Démarrer la partie         ║");
-        System.out.println("╠══════════════════════════════════════════════════════════╣");
-        System.out.println("║  JEU (P2P)                                               ║");
-        System.out.println("║    playserver <tentatives>    Jouer contre le serveur    ║");
-        System.out.println("║    secret <c1> <c2> <c3> <c4>   Définir/annoncer son secret ║");
-        System.out.println("║    guess  <c1> <c2> <c3> <c4> Proposer une combinaison v ║");
-        System.out.println("║      Couleurs : RED GREEN BLUE YELLOW ORANGE             ║");
-        System.out.println("║    feedback <couleurs> <pos>   Donner le feedback        ║");
-        System.out.println("║    winner <nom>               Annoncer le gagnant        ║");
-        System.out.println("║    newgame                    Lancer un nouveau jeu      ║");
-        System.out.println("╠══════════════════════════════════════════════════════════╣");
-        System.out.println("║  AVANCÉ                                                  ║");
-        System.out.println("║    raw <message_GG_complet>   Envoyer n'importe quoi     ║");
-        System.out.println("║    help                       Afficher cette aide        ║");
-        System.out.println("╚══════════════════════════════════════════════════════════╝");
+        System.out.println("╔════════════════════════════════════════════════════════════════╗");
+        System.out.println("║               GUESS GAME — Client CLI                          ║");
+        System.out.println("╠════════════════════════════════════════════════════════════════╣");
+        System.out.println("║  CONNEXION                                                     ║");
+        System.out.println("║    connect <ip> <port> <nom>    Se connecter au serveur         ║");
+        System.out.println("║    disconnect / quit / exit     Se déconnecter                  ║");
+        System.out.println("╠════════════════════════════════════════════════════════════════╣");
+        System.out.println("║  SALLES                                                        ║");
+        System.out.println("║    list                         Lister les salles disponibles   ║");
+        System.out.println("║    create <salle> <max> <tent>  Créer une salle                 ║");
+        System.out.println("║      ex: create room1 4 5  → 4 joueurs max, 5 tentatives        ║");
+        System.out.println("║    join  <salle>                Rejoindre une salle              ║");
+        System.out.println("║    leave <salle>                Quitter la salle                 ║");
+        System.out.println("║    kick  <salle> <joueur>       Expulser un joueur (admin)       ║");
+        System.out.println("║    start <salle>                Démarrer la partie (admin)       ║");
+        System.out.println("╠════════════════════════════════════════════════════════════════╣");
+        System.out.println("║  JEU P2P (après start)                                         ║");
+        System.out.println("║    secret                       Secret aléatoire — admin joue   ║");
+        System.out.println("║    secret <c1> <c2> <c3> <c4>  Définir le secret (admin         ║");
+        System.out.println("║      ne joue pas)                                               ║");
+        System.out.println("║    guess  <c1> <c2> <c3> <c4>  Proposer une combinaison         ║");
+        System.out.println("║      Couleurs valides : RED  GREEN  BLUE  YELLOW  ORANGE        ║");
+        System.out.println("║    feedback <couleurs> <pos>    Feedback manuel (admin)          ║");
+        System.out.println("║    winner <nom>                 Annoncer le gagnant (admin)      ║");
+        System.out.println("║    newgame                      Nouvelle manche (admin)          ║");
+        System.out.println("╠════════════════════════════════════════════════════════════════╣");
+        System.out.println("║  JEU SOLO (contre le serveur)                                  ║");
+        System.out.println("║    playserver <tentatives>      Lancer une partie solo           ║");
+        System.out.println("║    guess  <c1> <c2> <c3> <c4>  Proposer une combinaison         ║");
+        System.out.println("╠════════════════════════════════════════════════════════════════╣");
+        System.out.println("║  AVANCÉ                                                        ║");
+        System.out.println("║    raw <message_GG_complet>     Envoyer un message brut          ║");
+        System.out.println("║      ex: raw GG|LIST_ROOMS                                      ║");
+        System.out.println("║    help / h                     Afficher cette aide              ║");
+        System.out.println("╚════════════════════════════════════════════════════════════════╝");
         System.out.println();
     }
 
