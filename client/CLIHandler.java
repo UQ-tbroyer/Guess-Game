@@ -348,10 +348,10 @@ public class CLIHandler extends Thread {
             // ── Envoi brut (liberté totale) ───────────────────────────────
             case "raw":
                 // Usage : raw GG|WHATEVER|param1|param2
+                // Route automatiquement vers P2P ou serveur selon le type de commande.
                 if (tokens.length < 2) { printUsage("raw <message_complet>"); break; }
-                // Reconstitue le message complet à partir du 2e token
                 String rawMsg = line.substring(line.indexOf(' ') + 1);
-                client.sendToServer(rawMsg);
+                routeRawMessage(rawMsg);
                 break;
 
             // ── Commande inconnue ─────────────────────────────────────────
@@ -361,6 +361,66 @@ public class CLIHandler extends Thread {
 
         printPrompt();
         return cmd;
+    }
+
+    // ── Routage des messages bruts ────────────────────────────────────────────
+
+    /**
+     * Route un message GG brut vers P2P ou serveur selon le type de commande.
+     *
+     * Commandes P2P (GUESS intégré, broadcast pour les autres) :
+     *   GUESS, SECRET_SET, FEEDBACK, WINNER, NEW_GAME, NEXT_TURN,
+     *   TURN_ANNOUNCEMENT, PLAYER_OUT, SET_ATTEMPTS, HELLO
+     *
+     * Tout le reste part au serveur (CONNECT, CREATE_ROOM, JOIN_ROOM, etc.)
+     */
+    private void routeRawMessage(String rawMsg) {
+        if (rawMsg == null || rawMsg.isEmpty()) return;
+
+        String[] parts = rawMsg.split("\\|");
+        if (parts.length < 2 || !parts[0].equals("GG")) {
+            // Pas un message GG valide — envoyer tel quel au serveur
+            client.sendToServer(rawMsg);
+            return;
+        }
+
+        String type = parts[1].toUpperCase();
+        P2PManager p2p = client.getP2PManager();
+
+        switch (type) {
+            case "GUESS" -> {
+                if (client.isPlayingServerGame()) {
+                    // Mode solo : passe au serveur
+                    client.sendToServer(rawMsg);
+                    if (p2p != null) p2p.getGameEngine().consumeAttempt();
+                } else if (p2p != null) {
+                    // Mode P2P : extraire les couleurs et passer par sendGuess()
+                    // pour respecter la logique de tour et waitingForFeedback
+                    if (parts.length >= 6) {
+                        p2p.sendGuess(java.util.Arrays.asList(
+                                parts[2], parts[3], parts[4], parts[5]));
+                    } else {
+                        System.out.println("[CLIHandler] raw GUESS : format attendu GG|GUESS|c1|c2|c3|c4");
+                    }
+                } else {
+                    client.sendToServer(rawMsg);
+                }
+            }
+            case "SECRET_SET", "FEEDBACK", "WINNER", "NEW_GAME",
+                 "NEXT_TURN", "TURN_ANNOUNCEMENT", "PLAYER_OUT",
+                 "SET_ATTEMPTS", "HELLO" -> {
+                if (p2p != null) {
+                    p2p.broadcast(rawMsg);
+                    System.out.println("[raw] Diffusé en P2P : " + rawMsg);
+                } else {
+                    System.out.println("[CLIHandler] P2PManager non initialisé, message non envoyé.");
+                }
+            }
+            default -> {
+                // Commandes serveur (lobby) : envoyer directement
+                client.sendToServer(rawMsg);
+            }
+        }
     }
 
     // ── Affichage ────────────────────────────────────────────────────────────
