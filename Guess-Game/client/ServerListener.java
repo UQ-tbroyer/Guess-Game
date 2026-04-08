@@ -95,81 +95,39 @@ public class ServerListener extends Thread {
         switch (type) {
 
             // ── Connexion ────────────────────────────────────────────────
-            case "CONNECTED":
-                // GG|CONNECTED|nom_joueur
-                onConnected(parts);
-                break;
+            case "CONNECTED" -> onConnected(parts);
 
-            case "ERROR":
-                // GG|ERROR|raison
-                onError(parts);
-                break;
+            case "ERROR" -> onError(parts);
 
             // ── Salles ──────────────────────────────────────────────────
-            case "ROOM_CREATED":
-                // GG|ROOM_CREATED|nom_salle
-                onRoomCreated(parts);
-                break;
+            case "ROOM_CREATED" -> onRoomCreated(parts);
 
-            case "ROOM_LIST":
-                // GG|ROOM_LIST|salle1,salle2,...
-                onRoomList(parts);
-                break;
+            case "ROOM_LIST" -> onRoomList(parts);
 
-            case "JOINED_ROOM":
-                // GG|JOINED_ROOM|nom_salle|liste_joueurs
-                onJoinedRoom(parts);
-                break;
+            case "JOINED_ROOM" -> onJoinedRoom(parts);
 
-            case "LEFT_ROOM":
-                // GG|LEFT_ROOM|nom_salle
-            	client.setCurrentRoom(null);
-                onLeftRoom(parts);
-                break;
+            case "LEFT_ROOM" -> { client.setCurrentRoom(null); onLeftRoom(parts); }
 
-            case "PLAYER_KICKED":
-                // GG|PLAYER_KICKED|nom_joueur
-                onPlayerKicked(parts);
-                break;
+            case "PLAYER_KICKED" -> onPlayerKicked(parts);
 
             // ── Démarrage de partie ──────────────────────────────────────
-            case "GAME_STARTED":
-                // GG|GAME_STARTED|nom_salle|liste_joueurs
-                onGameStarted(rawMessage);
-                break;
+            case "GAME_STARTED" -> onGameStarted(rawMessage);
 
-            case "SERVER_GAME_STARTED":
-                // GG|SERVER_GAME_STARTED|tentatives
-                onServerGameStarted(parts);
-                break;
+            case "SERVER_GAME_STARTED" -> onServerGameStarted(parts);
 
-            case "INFO":
-                // GG|INFO|message
-                onInfo(parts);
-                break;
+            case "INFO" -> onInfo(parts);
 
-            case "FEEDBACK":
-                // GG|FEEDBACK|couleurs_correctes|positions_correctes
-                onServerFeedback(parts);
-                break;
+            case "FEEDBACK" -> onServerFeedback(parts);
 
-            case "WINNER":
-                // GG|WINNER|nom_joueur
-                onServerWinner();
-                break;
+            case "WINNER" -> onServerWinner();
 
             // ── Nouveau jeu ──────────────────────────────────────────────
-            case "NEW_GAME":
-                onNewGame();
-                break;
+            case "NEW_GAME" -> onNewGame();
 
-            case "GAME_OVER":
-                onGameOver(parts);
-                break;
+            case "GAME_OVER" -> onGameOver(parts);
 
             // ── Cas inconnu ──────────────────────────────────────────────
-            default:
-                System.out.println("[ServerListener] Type de message inconnu : " + type);
+            default -> System.out.println("[ServerListener] Type de message inconnu : " + type);
         }
     }
 

@@ -191,46 +191,44 @@ public class CLIHandler extends Thread {
                     break;
                 }
 
-                if (tokens.length == 1) {
-                    // Cas 1 : aucun secret entré → secret aléatoire, admin devient joueur
-                    p2pSec.generateRandomSecret();
-                    p2pSec.setAdminIsPlayer(true);
-                    p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName() + "|RANDOM");
-                    p2pSec.announceCurrentTurnIfSecretDefined();
-                    // Indiquer localement qui commence (l'admin ne reçoit pas ses propres broadcasts)
-                    String firstPlayer = p2pSec.getCurrentTurnPlayer();
-                    if (firstPlayer != null) {
-                        if (firstPlayer.equals(client.getPlayerName())) {
-                            System.out.println("[GAME] La partie commence ! C'est votre tour de deviner.");
-                        } else {
-                            System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
-                        }
-                    }
-                    System.out.println("[CLIHandler] Secret aléatoire généré. Vous êtes aussi joueur.");
-                } else if (tokens.length == GameEngine.COMBINATION_SIZE + 1) {
-                    try {
-                        java.util.List<Color> combo = new java.util.ArrayList<>();
-                        for (int i = 1; i <= GameEngine.COMBINATION_SIZE; i++) {
-                            combo.add(Color.fromString(tokens[i]));
-                        }
-                        p2pSec.setSecret(combo);
-                        p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
-                        // Cas 2 : admin a défini le secret → il n'est pas joueur, le retirer de l'ordre des tours
-                        p2pSec.removePlayerFromTurnOrder(client.getPlayerName());
+                switch (tokens.length) {
+                    case 1 -> {
+                        p2pSec.generateRandomSecret();
+                        p2pSec.setAdminIsPlayer(true);
+                        p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName() + "|RANDOM");
                         p2pSec.announceCurrentTurnIfSecretDefined();
-                        // Indiquer localement qui commence (l'admin ne reçoit pas ses propres broadcasts)
                         String firstPlayer = p2pSec.getCurrentTurnPlayer();
                         if (firstPlayer != null) {
-                            System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
+                            if (firstPlayer.equals(client.getPlayerName())) {
+                                System.out.println("[GAME] La partie commence ! C'est votre tour de deviner.");
+                            } else {
+                                System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
+                            }
                         }
-                        System.out.println("[CLIHandler] Secret défini. Vous n'êtes pas joueur cette manche. Envoyé aux pairs.");
-                    } catch (ParseException e) {
-                        System.out.println("[CLIHandler] Couleur invalide : " + e.getMessage());
-                    } catch (IllegalStateException | IllegalArgumentException e) {
-                        System.out.println("[CLIHandler] Erreur définition secret : " + e.getMessage());
+                        System.out.println("[CLIHandler] Secret aléatoire généré. Vous êtes aussi joueur.");
                     }
-                } else {
-                    printUsage("secret <c1> <c2> <c3> <c4> (couleurs : RED, GREEN, BLUE, YELLOW, ORANGE)");
+                    case GameEngine.COMBINATION_SIZE + 1 -> {
+                        try {
+                            java.util.List<Color> combo = new java.util.ArrayList<>();
+                            for (int i = 1; i <= GameEngine.COMBINATION_SIZE; i++) {
+                                combo.add(Color.fromString(tokens[i]));
+                            }
+                            p2pSec.setSecret(combo);
+                            p2pSec.broadcast("GG|SECRET_SET|" + client.getPlayerName());
+                            p2pSec.removePlayerFromTurnOrder(client.getPlayerName());
+                            p2pSec.announceCurrentTurnIfSecretDefined();
+                            String firstPlayer = p2pSec.getCurrentTurnPlayer();
+                            if (firstPlayer != null) {
+                                System.out.println("[GAME] La partie commence ! C'est le tour de " + firstPlayer + " de débuter.");
+                            }
+                            System.out.println("[CLIHandler] Secret défini. Vous n'êtes pas joueur cette manche. Envoyé aux pairs.");
+                        } catch (ParseException e) {
+                            System.out.println("[CLIHandler] Couleur invalide : " + e.getMessage());
+                        } catch (IllegalStateException | IllegalArgumentException e) {
+                            System.out.println("[CLIHandler] Erreur définition secret : " + e.getMessage());
+                        }
+                    }
+                    default -> printUsage("secret <c1> <c2> <c3> <c4> (couleurs : RED, GREEN, BLUE, YELLOW, ORANGE)");
                 }
                 break;
 
