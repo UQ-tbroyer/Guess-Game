@@ -247,13 +247,14 @@ public class CLIHandler extends Thread {
                 // Usage : guess <c1> <c2> <c3> <c4>
                 if (tokens.length < 5) { printUsage("guess <RED|GREEN|BLUE|YELLOW|ORANGE> x4"); break; }
                 if (client.isPlayingServerGame()) {
+                    // Consommer la tentative AVANT l'envoi pour éviter la race condition
+                    // (le serveur peut répondre avant que consumeAttempt soit appelé)
+                    P2PManager p2pSolo = client.getP2PManager();
+                    if (p2pSolo != null) p2pSolo.getGameEngine().consumeAttempt();
                     client.sendToServer("GG|GUESS|" + tokens[1].toUpperCase()
                                        + "|" + tokens[2].toUpperCase()
                                        + "|" + tokens[3].toUpperCase()
                                        + "|" + tokens[4].toUpperCase());
-                    // Suivi local des tentatives pour affichage
-                    P2PManager p2pSolo = client.getP2PManager();
-                    if (p2pSolo != null) p2pSolo.getGameEngine().consumeAttempt();
                 } else {
                     P2PManager p2pG = client.getP2PManager();
                     if (p2pG != null) {
@@ -305,6 +306,14 @@ public class CLIHandler extends Thread {
 
             case "newgame":
                 P2PManager p2pN = client.getP2PManager();
+                if (p2pN == null) {
+                    System.out.println("[CLIHandler] P2PManager non initialisé.");
+                    break;
+                }
+                if (!client.getPlayerName().equals(p2pN.getRoomAdminName())) {
+                    System.out.println("[CLIHandler] Seul l'admin peut lancer une nouvelle manche.");
+                    break;
+                }
                 if (p2pN != null) {
                     p2pN.resetForNewGame();
                     p2pN.broadcast("GG|NEW_GAME");

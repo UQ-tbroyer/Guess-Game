@@ -413,11 +413,18 @@ public class PeerListener extends Thread {
      * GG|NEW_GAME — réinitialise le GameEngine local.
      */
     private void onNewGame() {
+        // Vérifier que l'expéditeur est bien l'admin de la salle
+        String admin = p2pManager.getRoomAdminName();
+        if (admin != null && peerName != null && !peerName.equals(admin)) {
+            logger.logEvent("PeerListener : NEW_GAME ignoré de " + peerName
+                    + " (seul l'admin " + admin + " peut lancer une nouvelle manche).");
+            System.out.println("[GAME] Tentative de NEW_GAME ignorée : " + peerName + " n'est pas l'admin.");
+            return;
+        }
         p2pManager.resetForNewGame();
         System.out.println("[GAME] Nouvelle manche ! Les connexions ont été réinitialisées.");
-        String adminNewGame = p2pManager.getRoomAdminName();
-        if (adminNewGame != null && !adminNewGame.equals(p2pManager.getPlayerName())) {
-            System.out.println("[GAME] En attente que " + adminNewGame + " définisse le secret...");
+        if (admin != null && !admin.equals(p2pManager.getPlayerName())) {
+            System.out.println("[GAME] En attente que " + admin + " définisse le secret...");
         }
         logger.logEvent("PeerListener : nouvelle manche — état local réinitialisé.");
     }
