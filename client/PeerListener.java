@@ -170,14 +170,16 @@ public class PeerListener extends Thread {
             String remoteName = msg.getField(0);
             String receivedToken = (msg.getFieldCount() >= 2) ? msg.getField(1) : "";
 
-            // Valider le token de session : rejeter les connexions inconnues
+            // Valider le token de session : rejeter toute connexion sans token valide
             String expectedToken = p2pManager.getSessionToken();
-            if (expectedToken != null && !expectedToken.isBlank()
-                    && !expectedToken.equals(receivedToken)) {
+            boolean tokenValid = expectedToken != null && !expectedToken.isBlank()
+                    && !receivedToken.isBlank()
+                    && expectedToken.equals(receivedToken);
+            if (!tokenValid) {
                 logger.logEvent("PeerListener : HELLO rejeté de " + remoteName
-                        + " — token de session invalide.");
+                        + " — token de session absent ou invalide.");
                 System.err.println("[P2P] Connexion rejectée de " + remoteName
-                        + " : token de session invalide.");
+                        + " : token de session absent ou invalide.");
                 closeSilently();
                 return;
             }
@@ -410,8 +412,8 @@ public class PeerListener extends Thread {
             }
 
             gameEngine.setGameOver(true);
-            // Partie terminée : remettre un timeout d'inactivité (5 min) en attendant newgame
-            try { peerSocket.setSoTimeout(300_000); } catch (IOException ignored) {}
+            // Connexion maintenue sans timeout : l'admin peut lancer une nouvelle manche
+            // à tout moment, il n'y a pas de fenêtre maximale d'attente.
             // Indiquer les actions disponibles selon le rôle
             String adminAfterOver = p2pManager.getRoomAdminName();
             if (adminAfterOver != null && adminAfterOver.equals(p2pManager.getPlayerName())) {
@@ -442,8 +444,7 @@ public class PeerListener extends Thread {
             return;
         }
         p2pManager.resetForNewGame();
-        // En attente du prochain SECRET_SET : remettre timeout d'inactivité
-        try { peerSocket.setSoTimeout(300_000); } catch (IOException ignored) {}
+        // Pas de timeout P2P : on attend que l'admin définisse le secret, sans limite de temps
         System.out.println("[GAME] Nouvelle manche ! Les connexions ont été réinitialisées.");
         if (admin != null && !admin.equals(p2pManager.getPlayerName())) {
             System.out.println("[GAME] En attente que " + admin + " définisse le secret...");

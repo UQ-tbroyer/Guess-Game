@@ -100,7 +100,7 @@ public class CLIHandler extends Thread {
                 client.setPlayerName(playerNameRaw);
                 client.setConnected(false);
                 try {
-                    client.connect(tokens[1], tokens[2], Integer.parseInt(tokens[2]));
+                    client.connect(tokens[1], Integer.parseInt(tokens[2]));
                 } catch (NumberFormatException e) {
                     System.out.println("[CLIHandler] Port invalide : '" + tokens[2] + "'. Entrez un nombre entier.");
                 }
@@ -118,7 +118,7 @@ public class CLIHandler extends Thread {
                 // Usage : create <nom_salle> <max_joueurs> <max_tentatives>
                 if (tokens.length < 4) { printUsage("create <salle> <maxJoueurs> <maxTentatives>"); break; }
                 // Sanitisation du nom de salle
-                String roomNameCreate = tokens[1].replace("|", "").replace("\n", "").replace("\r", "").trim();
+                String roomNameCreate = tokens[1].replace("|", "_").replace("\n", " ").replace("\r", " ").replace("\t", " ").replaceAll("[\\x00-\\x1F\\x7F]", "").trim();
                 if (roomNameCreate.isEmpty()) { System.out.println("[CLIHandler] Nom de salle invalide."); break; }
                 int p2pPortCreate = client.getP2PPort();
                 String createMsg = "GG|CREATE_ROOM|" + roomNameCreate + "|" + tokens[2] + "|" + tokens[3];
@@ -136,7 +136,7 @@ public class CLIHandler extends Thread {
                 // Usage : join <nom_salle>
                 if (tokens.length < 2) { printUsage("join <nom_salle>"); break; }
                 // Sanitisation du nom de salle
-                String roomNameJoin = tokens[1].replace("|", "").replace("\n", "").replace("\r", "").trim();
+                String roomNameJoin = tokens[1].replace("|", "_").replace("\n", " ").replace("\r", " ").replace("\t", " ").replaceAll("[\\x00-\\x1F\\x7F]", "").trim();
                 if (roomNameJoin.isEmpty()) { System.out.println("[CLIHandler] Nom de salle invalide."); break; }
                 int p2pPortJoin = client.getP2PPort();
                 String joinMsg = "GG|JOIN_ROOM|" + roomNameJoin;

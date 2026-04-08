@@ -145,7 +145,7 @@ GG|COMMANDE|champ1|champ2|...
 | C → S | `GG\|KICK_PLAYER\|salle\|nom_joueur` | (Admin uniquement) Expulser un joueur |
 | S → C | `GG\|PLAYER_KICKED\|nom_joueur` | Joueur expulsé |
 | C → S | `GG\|START_GAME\|salle` | Démarrer la partie dans la salle |
-| S → C | `GG\|GAME_STARTED\|salle\|joueur1:ip:port,...` | Partie lancée ; informations P2P incluses |
+| S → C | `GG\|GAME_STARTED\|salle\|max_tentatives\|admin\|token\|joueur1:ip:port,...` | Partie lancée ; token de session + informations P2P inclus |
 | C → S | `GG\|PLAY_SERVER\|max_tentatives` | Démarrer une partie solo contre le serveur |
 | S → C | `GG\|SERVER_GAME_STARTED\|max_tentatives` | Partie solo lancée |
 
@@ -154,10 +154,12 @@ GG|COMMANDE|champ1|champ2|...
 | Direction | Message | Description |
 |-----------|---------|-------------|
 | Diffusion | `GG\|SECRET_SET\|nom_joueur` | Annonce du détenteur du secret |
-| C → Détenteur | `GG\|GUESS\|ROUGE\|BLEU\|VERT\|JAUNE` | Soumettre une proposition |
+| C → Détenteur | `GG\|GUESS\|RED\|BLUE\|GREEN\|YELLOW` | Soumettre une proposition |
 | Détenteur → C | `GG\|FEEDBACK\|couleurs_correctes\|positions_correctes` | Retour sur la proposition |
 | Diffusion | `GG\|WINNER\|nom_joueur` | Annonce du gagnant |
+| Diffusion | `GG\|GAME_OVER\|WIN\|nom_joueur` ou `GG\|GAME_OVER\|LOSE\|NONE` | Fin de manche |
 | Diffusion | `GG\|NEW_GAME` | Réinitialisation pour une nouvelle manche |
+| Pair entrant → Hôte | `GG\|HELLO\|nom_joueur\|token` | Authentification P2P avec le token de session |
 
 **Le mode solo (contre le serveur) utilise les mêmes messages `GUESS` / `FEEDBACK`**, acheminés vers le serveur plutôt que vers les pairs.
 
@@ -172,33 +174,31 @@ GG|COMMANDE|champ1|champ2|...
 
 ### Compilation
 
-Chaque projet est compilé et exporté en `.jar` depuis l'IDE (IntelliJ / Eclipse) :
+```powershell
+cd Guess-Game
 
-```bash
-# Serveur
-javac -d out/server/ server/src/server/*.java
-jar cfe server.jar server.Main -C out/server/ .
+# Compiler le package commun
+javac -d out/common common/*.java
 
-# Client
-javac -d out/client/ client/src/client/*.java
-jar cfe client.jar client.Main -C out/client/ .
+# Compiler le serveur
+javac -cp out/common -d out/server server/*.java common/*.java
+
+# Compiler le client
+javac -cp "out/common;out/server" -d out/client client/*.java common/*.java
 ```
+
+> **Prérequis :** Le fichier `gg_server.jks` (keystore TLS auto-signé) et `gg_hmac.salt` (sel HMAC) doivent se trouver dans le répertoire de travail au démarrage (déjà présents dans le projet).
 
 ### Lancer le serveur
 
-```bash
-java -jar server.jar [port]
-# Port par défaut : 5000
-# Exemple :
-java -jar server.jar 5000
+```powershell
+java -cp "out/server;out/common" server.GGServer 5000
 ```
 
 ### Lancer un client
 
-```bash
-java -jar client.jar [ip_serveur] [port_serveur]
-# Exemple :
-java -jar client.jar 127.0.0.1 5000
+```powershell
+java -cp "out/client;out/server;out/common" client.GGClient 127.0.0.1 5000 Alice
 ```
 
 Une fois connecté, l'interface console accepte **n'importe quel message du protocole GG** à tout moment :
@@ -216,7 +216,7 @@ Une fois connecté, l'interface console accepte **n'importe quel message du prot
 ## Règles du jeu
 
 - La combinaison secrète contient **4 couleurs**.
-- Couleurs disponibles : `ROUGE`, `VERT`, `BLEU`, `JAUNE`, `ORANGE`
+- Couleurs disponibles : `RED`, `GREEN`, `BLUE`, `YELLOW`, `ORANGE`
 - Les couleurs **peuvent se répéter** (voir hypothèses ci-dessous).
 - Après chaque proposition, le détenteur envoie :
   - **Couleurs correctes** — bonne couleur, mauvaise position
@@ -313,7 +313,7 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 | Tests unitaires structurés | ✅ | `GameEngine` et `MessageParser` testés indépendamment |
 | Tolérance aux pannes | ✅ | Déconnexion détectée via `IOException` ; session annulée proprement, joueurs retournés au lobby sans blocage |
 | Mode solo contre le serveur | ✅ | `PLAY_SERVER` : le serveur génère le secret et répond aux `GUESS` — même flux de messages que le P2P, aucune logique client spécifique requise |
-| Chiffrement TLS + HMAC | 🔄 Prévu | `SecurityManager` : encapsulation `SSLSocket`, signature HMAC des messages, rate limiting par joueur, sanitisation des entrées |
+| Chiffrement TLS + HMAC | ✅ | `SecurityManager` : tunnel TLS sur toutes les connexions (client→serveur et P2P), signature HMAC-SHA256 de chaque message, rate limiting (30 msg/s, 5 violations → déconnexion), anti-brute-force CONNECT (5 échecs/IP), sanitisation des entrées, token de session UUID par partie P2P |
 
 ---
 

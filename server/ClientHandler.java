@@ -264,8 +264,16 @@ public class ClientHandler implements Runnable {
             sendError("Une salle doit accueillir au moins 2 joueurs.");
             return;
         }
+        if (maxPlayers > 10) {
+            sendError("Une salle ne peut pas dépasser 10 joueurs.");
+            return;
+        }
         if (maxAttempts < 1) {
             sendError("Le nombre de tentatives doit être positif.");
+            return;
+        }
+        if (maxAttempts > 100) {
+            sendError("Le nombre de tentatives ne peut pas dépasser 100.");
             return;
         }
 
@@ -494,6 +502,13 @@ public class ClientHandler implements Runnable {
 
         room.setGameInProgress(true);
 
+        // Désactiver le timeout d'inactivité pour tous les joueurs de la salle :
+        // pendant une partie P2P, les clients n'envoient rien au serveur.
+        for (String pName : room.getPlayerNames()) {
+            ClientHandler h = server.getClient(pName);
+            if (h != null) h.setSocketTimeout(0);
+        }
+
         // Générer un token de session unique pour authentifier les connexions P2P
         String sessionToken = java.util.UUID.randomUUID().toString();
 
@@ -592,6 +607,11 @@ public class ClientHandler implements Runnable {
             }
 
             room.setGameInProgress(false);
+            // Restaurer le timeout d'inactivité après la fin de la partie
+            for (String pName : room.getPlayerNames()) {
+                ClientHandler h = server.getClient(pName);
+                if (h != null) h.setSocketTimeout(SecurityManager.IDLE_TIMEOUT_MS);
+            }
             broadcastToRoom(room, MessageParser.serialize(CommandType.INFO,
                     "Partie terminée: " + result + " (" + winner + "). Salle en attente."));
 
@@ -658,6 +678,17 @@ public class ClientHandler implements Runnable {
         } catch (common.ParseException e) {
             sendError("Couleur invalide dans GUESS : " + e.getMessage());
         }
+    }
+
+    /**
+     * Désactive ou restaure le timeout d'inactivité du socket de ce client.
+     * Appelé par onStartGame (disable) et onGameOver (restore) pour éviter
+     * de couper un joueur qui réfléchit pendant une partie P2P.
+     */
+    public void setSocketTimeout(int ms) {
+        try {
+            socket.setSoTimeout(ms);
+        } catch (IOException ignored) {}
     }
 
     // -------------------------------------------------------------------------

@@ -52,7 +52,7 @@ public class GGClient {
      * Établit la connexion TCP avec le serveur, envoie GG|CONNECT,
      * puis démarre ServerListener et CLIHandler.
      */
-    public void connect(String ip, String port, int portInt) {
+    public void connect(String ip, int portInt) {
         try {
             serverSocket = new Socket(ip, portInt);
             serverSocket = security.wrapTlsClient(serverSocket);
@@ -95,7 +95,7 @@ public class GGClient {
      * Surcharge de connect() utilisant les champs de l'instance.
      */
     public void connect() {
-        connect(serverIp, String.valueOf(serverPort), serverPort);
+        connect(serverIp, serverPort);
     }
 
     /**

@@ -220,8 +220,9 @@ public class P2PManager {
                 continue;
             }
 
+            Socket socket = null;
             try {
-                Socket socket = new Socket(ip, port);
+                socket = new Socket(ip, port);
                 socket = security.wrapTlsClient(socket);
                 peers.put(peerName, socket);
                 logger.logEvent("P2PManager : connecté au pair " + peerName + " (" + ip + ":" + port + ")");
@@ -234,6 +235,11 @@ public class P2PManager {
                 peerListeners.add(listener);
                 listener.start();
             } catch (IOException e) {
+                // Nettoyage : retirer la socket orpheline si elle avait déjà été ajoutée à la map
+                Socket orphan = peers.remove(peerName);
+                if (orphan != null && !orphan.isClosed()) {
+                    try { orphan.close(); } catch (IOException ignored) {}
+                }
                 logger.logError("P2PManager : impossible de se connecter à "
                         + peerName + " (" + ip + ":" + port + ")", e);
             }
