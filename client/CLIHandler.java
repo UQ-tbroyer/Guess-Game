@@ -171,6 +171,17 @@ public class CLIHandler extends Thread {
                 client.sendToServer("GG|PLAY_SERVER|" + tokens[1]);
                 break;
 
+            case "quitserver":
+                // Quitte la partie solo en cours
+                if (!client.isPlayingServerGame()) {
+                    System.out.println("[CLIHandler] Vous n'\u00eates pas en mode solo.");
+                    break;
+                }
+                client.sendToServer("GG|GAME_OVER|QUIT|" + client.getPlayerName());
+                client.setPlayingServerGame(false);
+                System.out.println("[GAME] Partie solo abandonn\u00e9e.");
+                break;
+
             // ── Messages de jeu P2P ──────────────────────────────────────
             case "secret":
                 // Usage : secret <c1> <c2> <c3> <c4>
@@ -247,7 +258,12 @@ public class CLIHandler extends Thread {
                     P2PManager p2pG = client.getP2PManager();
                     if (p2pG != null) {
                         if (!p2pG.isPlayerTurn(client.getPlayerName())) {
-                            System.out.println("[CLIHandler] Ce n'est pas votre tour. Attendez le tour de " + p2pG.getCurrentTurnPlayer() + ".");
+                            String currentTurn = p2pG.getCurrentTurnPlayer();
+                            if (currentTurn != null) {
+                                System.out.println("[CLIHandler] Ce n'est pas votre tour. Attendez le tour de " + currentTurn + ".");
+                            } else {
+                                System.out.println("[CLIHandler] Aucune partie en cours.");
+                            }
                             break;
                         }
                         p2pG.sendGuess(java.util.Arrays.asList(
@@ -385,6 +401,7 @@ public class CLIHandler extends Thread {
         System.out.println("║  JEU SOLO (contre le serveur)                                 ║");
         System.out.println("║    playserver <tentatives>     Lancer une partie solo          ║");
         System.out.println("║    guess  <c1> <c2> <c3> <c4> Proposer une combinaison        ║");
+        System.out.println("║    quitserver                  Abandonner la partie solo       ║");
         System.out.println("╠════════════════════════════════════════════════════════════════╣");
         System.out.println("║  AVANCE                                                        ║");
         System.out.println("║    raw <message_GG_complet>    Envoyer un message brut         ║");

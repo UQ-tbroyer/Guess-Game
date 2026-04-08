@@ -558,6 +558,7 @@ public class ClientHandler implements Runnable {
     /**
      * GG|GAME_OVER|WIN|nom_joueur or GG|GAME_OVER|LOSE|NONE
      * Signalé par un client pour clore la partie P2P côté serveur.
+     * Également utilisé pour quitter une partie solo (GG|GAME_OVER|QUIT|*).
      */
     private void onGameOver(Message msg) {
         try {
@@ -565,8 +566,14 @@ public class ClientHandler implements Runnable {
             String result = msg.getField(0);
             String winner = msg.getField(1);
 
+            // Cas solo : le joueur quitte ou la partie solo se termine
             if (currentRoom == null) {
-                sendError("Aucune salle active pour GAME_OVER.");
+                GameSession solo = server.getSoloSession(playerName);
+                if (solo != null && !solo.isFinished()) {
+                    solo.abort();
+                    server.removeSoloSession(playerName);
+                    logger.logEvent(playerName + " a quitté la partie solo (" + result + ").");
+                }
                 return;
             }
 
