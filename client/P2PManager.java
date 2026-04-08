@@ -217,9 +217,9 @@ public class P2PManager {
                 logger.logEvent("P2PManager : connecté au pair " + peerName + " (" + ip + ":" + port + ")");
                 // Envoyer un HELLO pour que le pair puisse nous enregistrer (connexion entrante chez lui)
                 String helloMsg = MessageParser.serialize(CommandType.HELLO, playerName);
-                socket.getOutputStream().write((helloMsg + "\n").getBytes("UTF-8"));
+                socket.getOutputStream().write((security.signMessage(helloMsg) + "\n").getBytes("UTF-8"));
                 socket.getOutputStream().flush();
-                PeerListener listener = new PeerListener(socket, this, gameEngine);
+                PeerListener listener = new PeerListener(socket, this, gameEngine, security);
                 peerListeners.add(listener);
                 listener.start();
             } catch (IOException e) {
@@ -849,7 +849,7 @@ public class P2PManager {
             return;
         }
         try {
-            socket.getOutputStream().write((rawMessage + "\n").getBytes("UTF-8"));
+            socket.getOutputStream().write((security.signMessage(rawMessage) + "\n").getBytes("UTF-8"));
             socket.getOutputStream().flush();
         } catch (IOException e) {
             logger.logError("P2PManager : erreur d'envoi vers " + peerName, e);
@@ -910,7 +910,7 @@ public class P2PManager {
                     Socket socket = p2pServerSocket.accept();
                     socket = security.wrapTLS(socket);
                     logger.logEvent("P2PAcceptor : connexion entrante de " + socket.getInetAddress());
-                    PeerListener listener = new PeerListener(socket, P2PManager.this, gameEngine);
+                    PeerListener listener = new PeerListener(socket, P2PManager.this, gameEngine, security);
                     peerListeners.add(listener);
                     listener.start();
                 } catch (IOException e) {

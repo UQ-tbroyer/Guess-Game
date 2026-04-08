@@ -5,8 +5,11 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Base64;
 import java.util.Map;
@@ -67,8 +70,11 @@ public class SecurityManager {
     /** Variable d'environnement pour une clé HMAC dédiée (prioritaire sur le keystore). */
     private static final String HMAC_KEY_ENV = "GG_HMAC_KEY";
 
-    /** Sel statique pour la dérivation PBKDF2 de la clé HMAC. */
-    private static final byte[] HMAC_PBKDF2_SALT = "GG_HMAC_STATIC_SALT_V1".getBytes(StandardCharsets.UTF_8);
+    /** Nom du fichier où le sel HMAC est persisté entre redémarrages. */
+    private static final String SALT_FILE = "gg_hmac.salt";
+
+    /** Longueur du sel HMAC en octets (256 bits). */
+    private static final int SALT_LENGTH_BYTES = 32;
 
     /** Nombre d'itérations PBKDF2. */
     private static final int PBKDF2_ITERATIONS = 100_000;
@@ -85,6 +91,9 @@ public class SecurityManager {
     /** Nombre de violations de rate limit avant déconnexion forcée. */
     private static final int MAX_RATE_VIOLATIONS = 5;
 
+    /** Nombre maximum de tentatives CONNECT échouées par IP avant blocage. */
+    private static final int MAX_AUTH_ATTEMPTS = 5;
+
     /** Taille maximale d'un message GG en caractères. */
     public static final int MAX_MESSAGE_SIZE = 1_024;
 
@@ -99,10 +108,8 @@ public class SecurityManager {
 
     /**
      * Interrupteur global de sécurité.
-     * Mettre à true pour activer TLS, HMAC et rate limiting en production.
-     * Laisser à false pendant le développement/les tests : toutes les opérations
-     * de sécurité deviennent des no-ops transparents.
-     * TODO : passer à true avant la mise en production.
+     * true = TLS, HMAC et rate limiting sont actifs (mode production).
+     * false = toutes les opérations de sécurité deviennent des no-ops (mode dev/test).
      */
     public static final boolean SECURITY_ENABLED = true;
 
@@ -131,6 +138,9 @@ public class SecurityManager {
     /** Compteur de violations de rate limit par identifiant. */
     private final Map<String, AtomicInteger> violationsMap;
 
+    /** Compteur de tentatives CONNECT échouées par adresse IP. */
+    private final Map<String, AtomicInteger> authAttemptsMap;
+
     // -------------------------------------------------------------------------
     // Constructeur
     // -------------------------------------------------------------------------
@@ -141,8 +151,9 @@ public class SecurityManager {
      * En cas d'échec, bascule en mode dégradé (pas de TLS ni HMAC).
      */
     public SecurityManager() {
-        this.rateLimitMap  = new ConcurrentHashMap<>();
-        this.violationsMap = new ConcurrentHashMap<>();
+        this.rateLimitMap    = new ConcurrentHashMap<>();
+        this.violationsMap   = new ConcurrentHashMap<>();
+        this.authAttemptsMap = new ConcurrentHashMap<>();
         initSecurity();
     }
 
@@ -196,7 +207,7 @@ public class SecurityManager {
                 try {
                     SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
                     PBEKeySpec spec = new PBEKeySpec(
-                            pass.toCharArray(), HMAC_PBKDF2_SALT, PBKDF2_ITERATIONS, PBKDF2_KEY_BITS);
+                            pass.toCharArray(), loadOrGenerateSalt(), PBKDF2_ITERATIONS, PBKDF2_KEY_BITS);
                     byte[] derived = skf.generateSecret(spec).getEncoded();
                     spec.clearPassword();
                     hmacKey = new SecretKeySpec(derived, HMAC_ALGO);
@@ -232,6 +243,52 @@ public class SecurityManager {
             tlsEnabled  = false;
             hmacEnabled = false;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Sel HMAC dynamique
+    // -------------------------------------------------------------------------
+
+    /**
+     * Charge le sel HMAC depuis le fichier {@value #SALT_FILE}.
+     * Si le fichier n'existe pas ou est corrompu, génère un nouveau sel aléatoire
+     * et le persiste pour les prochains démarrages.
+     *
+     * Le sel doit être identique sur toutes les instances qui communiquent ensemble :
+     * en déploiement multi-machine, copier {@value #SALT_FILE} sur chaque nœud.
+     *
+     * @return sel de 256 bits pour PBKDF2
+     */
+    private static byte[] loadOrGenerateSalt() {
+        java.nio.file.Path saltPath = Paths.get(SALT_FILE);
+        if (Files.exists(saltPath)) {
+            try {
+                byte[] loaded = Files.readAllBytes(saltPath);
+                if (loaded.length == SALT_LENGTH_BYTES) {
+                    DebugLogger.getInstance().logEvent(
+                            "[SecurityManager] Sel HMAC chargé depuis '" + SALT_FILE + "'.");
+                    return loaded;
+                }
+                DebugLogger.getInstance().logEvent(
+                        "[SecurityManager] Sel HMAC tronqué (" + loaded.length + " octets), régénération.");
+            } catch (IOException e) {
+                DebugLogger.getInstance().logError(
+                        "[SecurityManager] Impossible de lire le sel HMAC, régénération.", e);
+            }
+        }
+        // Générer un nouveau sel cryptographiquement sûr
+        byte[] salt = new byte[SALT_LENGTH_BYTES];
+        new SecureRandom().nextBytes(salt);
+        try {
+            Files.write(saltPath, salt);
+            DebugLogger.getInstance().logEvent(
+                    "[SecurityManager] Nouveau sel HMAC généré et sauvegardé dans '" + SALT_FILE + "'. "
+                    + "Copiez ce fichier sur tous les nœuds du serveur.");
+        } catch (IOException e) {
+            DebugLogger.getInstance().logError(
+                    "[SecurityManager] Impossible de sauvegarder le sel HMAC (fonctionnement en mémoire).", e);
+        }
+        return salt;
     }
 
     // -------------------------------------------------------------------------
@@ -417,19 +474,64 @@ public class SecurityManager {
     }
 
     // -------------------------------------------------------------------------
+    // Anti-brute-force CONNECT
+    // -------------------------------------------------------------------------
+
+    /**
+     * Vérifie si une adresse IP est bloquée pour avoir échoué trop de fois
+     * à s'authentifier (commande CONNECT).
+     *
+     * @param ipAddress adresse IP du client
+     * @return true si l'IP est bloquée
+     */
+    public boolean isAuthBlocked(String ipAddress) {
+        if (!SECURITY_ENABLED) return false;
+        AtomicInteger attempts = authAttemptsMap.get(ipAddress);
+        return attempts != null && attempts.get() >= MAX_AUTH_ATTEMPTS;
+    }
+
+    /**
+     * Enregistre une tentative CONNECT échouée pour une adresse IP.
+     *
+     * @param ipAddress adresse IP du client
+     * @return true si le seuil de blocage est atteint
+     */
+    public boolean recordAuthFailure(String ipAddress) {
+        if (!SECURITY_ENABLED) return false;
+        AtomicInteger count = authAttemptsMap.computeIfAbsent(
+                ipAddress, k -> new AtomicInteger(0));
+        int attempts = count.incrementAndGet();
+        if (attempts >= MAX_AUTH_ATTEMPTS) {
+            DebugLogger.getInstance().logEvent(
+                    "[SecurityManager] IP " + ipAddress
+                    + " bloquée après " + attempts + " tentatives CONNECT échouées.");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Réinitialise le compteur d'échecs d'authentification après un CONNECT réussi.
+     *
+     * @param ipAddress adresse IP du client
+     */
+    public void resetAuthAttempts(String ipAddress) {
+        authAttemptsMap.remove(ipAddress);
+    }
+
+    // -------------------------------------------------------------------------
     // Sanitisation
     // -------------------------------------------------------------------------
 
     /**
-     * Sanitise une valeur de champ pour empêcher l'injection de délimiteurs GG.
+     * Sanitise une valeur de champ pour empêcher l'injection de délimiteurs GG
+     * et les attaques par caractères de contrôle.
      *
      * Caractères filtrés :
-     *  - '|'  : délimiteur de champs GG → remplacé par '_'
-     *  - '\n' : fin de message           → remplacé par ' '
-     *  - '\r' : retour chariot           → remplacé par ' '
-     *
-     * Hypothèse : les noms de joueurs et de salles passent par cette méthode
-     * dès leur réception dans ClientHandler.
+     *  - '|'              : délimiteur de champs GG → remplacé par '_'
+     *  - '\n', '\r'       : fin de message / retour chariot → remplacé par ' '
+     *  - '\t'             : tabulation → remplacé par ' '
+     *  - U+0000–U+001F, U+007F : caractères de contrôle ASCII → supprimés
      *
      * @param input la chaîne à nettoyer
      * @return la chaîne sanitisée, ou chaîne vide si input est null
@@ -440,6 +542,8 @@ public class SecurityManager {
                 .replace("|",  "_")
                 .replace("\n", " ")
                 .replace("\r", " ")
+                .replace("\t", " ")
+                .replaceAll("[\\x00-\\x1F\\x7F]", "")
                 .trim();
     }
 

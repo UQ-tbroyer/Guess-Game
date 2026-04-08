@@ -353,47 +353,17 @@ public class GameSession {
     }
 
     // -------------------------------------------------------------------------
-    // Classe interne : Feedback
+    // Classe interne : Feedback (déléguée à common.Feedback)
     // -------------------------------------------------------------------------
 
     /**
-     * Résultat retourné par checkGuess().
-     * Correspond au message GG|FEEDBACK|couleurs_correctes|positions_correctes.
+     * Alias de type pour maintenir la compatibilité avec le code existant
+     * qui référence {@code GameSession.Feedback}.
+     * Toute la logique est dans {@link common.Feedback}.
      */
-    public static final class Feedback {
-
-        private final int correctColors;
-        private final int correctPositions;
-
+    public static final class Feedback extends common.Feedback {
         public Feedback(int correctColors, int correctPositions) {
-            this.correctColors    = correctColors;
-            this.correctPositions = correctPositions;
-        }
-
-        public int  getCorrectColors()    { return correctColors; }
-        public int  getCorrectPositions() { return correctPositions; }
-
-        /**
-         * @return true si la proposition est exacte (partie gagnée)
-         */
-        public boolean isWin() {
-            return correctPositions == COMBO_SIZE;
-        }
-
-        /**
-         * Sérialise le feedback au format réseau GG.
-         * Exemple : "3|1"  (utilisé dans GG|FEEDBACK|3|1)
-         *
-         * @return chaîne "correctColors|correctPositions"
-         */
-        public String toGGString() {
-            return correctColors + "|" + correctPositions;
-        }
-
-        @Override
-        public String toString() {
-            return "Feedback{couleurs=" + correctColors +
-                    ", positions=" + correctPositions + "}";
+            super(correctColors, correctPositions);
         }
     }
 }

@@ -67,8 +67,7 @@ public class PermissionManager {
         if (isBanned(playerName))                      return false;
         if (room.isFull())                             return false;
         if (room.isGameInProgress())                   return false;
-        if (room.hasPlayer(playerName))                return false;
-        return true;
+        return !room.hasPlayer(playerName);
     }
 
     /**
@@ -88,8 +87,7 @@ public class PermissionManager {
         if (room == null || kicker == null || target == null) return false;
         if (!isAdmin(room, kicker))                           return false;
         if (kicker.equals(target))                            return false;
-        if (!room.hasPlayer(target))                          return false;
-        return true;
+        return room.hasPlayer(target);
     }
 
     /**
@@ -108,8 +106,7 @@ public class PermissionManager {
         if (room == null || playerName == null) return false;
         if (!isAdmin(room, playerName))         return false;
         if (room.isGameInProgress())            return false;
-        if (room.getPlayerCount() < 2)          return false;
-        return true;
+        return room.getPlayerCount() >= 2;
     }
 
     // -------------------------------------------------------------------------

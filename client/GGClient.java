@@ -21,8 +21,8 @@ public class GGClient {
 
     // ── Champs ──────────────────────────────────────────────────────────────
 
-    private String serverIp;
-    private int serverPort;
+    private final String serverIp;
+    private final int serverPort;
     private Socket serverSocket;
     private String playerName;
     private boolean connected = false;
@@ -177,7 +177,14 @@ public class GGClient {
      */
     public static void main(String[] args) {
         String ip         = (args.length > 0) ? args[0] : "127.0.0.1";
-        int    port       = (args.length > 1) ? Integer.parseInt(args[1]) : 5000;
+        int    port       = 5000;
+        if (args.length > 1) {
+            try {
+                port = Integer.parseInt(args[1]);
+            } catch (NumberFormatException e) {
+                System.err.println("[GGClient] Port invalide : '" + args[1] + "'. Utilisation du port par défaut 5000.");
+            }
+        }
         String playerName = (args.length > 2) ? args[2] : "Player";
 
         // Activer les logs debug via --debug (optionnel)

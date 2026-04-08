@@ -89,8 +89,9 @@ public class GameEngine {
 
         this.secretCombination = new ArrayList<>(combo);
         this.isSecretOwner     = true;
-        logger.logEvent("Secret défini par ce client (valeur masquée pour éviter fuite).\n" +
-                "Attention : ne jamais exposer la combinaison secrète aux autres joueurs.");
+        logger.logEvent("""
+                Secret défini par ce client (valeur masquée pour éviter fuite).
+                Attention : ne jamais exposer la combinaison secrète aux autres joueurs.""");
     }
 
     /**

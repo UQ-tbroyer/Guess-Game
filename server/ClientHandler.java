@@ -191,6 +191,13 @@ public class ClientHandler implements Runnable {
      * Réponse : GG|CONNECTED|nom_joueur  ou  GG|ERROR|raison
      */
     private void onConnect(Message msg) {
+        // Bloquer les IPs ayant dépassé le seuil de tentatives échouées
+        if (security.isAuthBlocked(clientIp)) {
+            sendError("Trop de tentatives d'authentification. Réessayez plus tard.");
+            closeConnection();
+            return;
+        }
+
         try {
             msg.requireFields(1);
         } catch (ParseException e) {
@@ -201,16 +208,19 @@ public class ClientHandler implements Runnable {
         String name = security.sanitize(msg.getField(0).trim());
 
         if (name.isEmpty()) {
+            security.recordAuthFailure(clientIp);
             sendError("Le nom de joueur ne peut pas être vide.");
             return;
         }
 
         if (permissions.isBanned(name)) {
+            security.recordAuthFailure(clientIp);
             sendError("Vous êtes banni de ce serveur.");
             return;
         }
 
         if (!server.registerClient(name, this)) {
+            security.recordAuthFailure(clientIp);
             sendError("Le nom '" + name + "' est déjà pris. Choisissez un autre nom.");
             return;
         }
@@ -221,6 +231,7 @@ public class ClientHandler implements Runnable {
             socket.setSoTimeout(SecurityManager.IDLE_TIMEOUT_MS);
         } catch (IOException ignored) {}
         security.resetViolations(clientIp);
+        security.resetAuthAttempts(clientIp);
         send(MessageParser.serialize(CommandType.CONNECTED, playerName));
         logger.logEvent("Joueur connecté : " + playerName + " depuis " + clientIp);
     }

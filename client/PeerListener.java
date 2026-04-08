@@ -13,6 +13,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
+import server.SecurityManager;
 
 /**
  * PeerListener — thread d'écoute dédié à un pair P2P.
@@ -40,11 +41,12 @@ public class PeerListener extends Thread {
     // Attributs
     // -------------------------------------------------------------------------
 
-    private final Socket      peerSocket;
-    private       String      peerName;
-    private final BufferedReader in;
-    private final P2PManager  p2pManager;
-    private final GameEngine  gameEngine;
+    private final Socket         peerSocket;
+    private       String         peerName;
+    private final BufferedReader  in;
+    private final P2PManager     p2pManager;
+    private final GameEngine     gameEngine;
+    private final SecurityManager security;
 
     private final DebugLogger logger = DebugLogger.getInstance();
 
@@ -58,11 +60,13 @@ public class PeerListener extends Thread {
      * @param gameEngine  moteur de jeu local partagé
      * @throws IOException si le flux d'entrée ne peut pas être ouvert
      */
-    public PeerListener(Socket peerSocket, P2PManager p2pManager, GameEngine gameEngine)
+    public PeerListener(Socket peerSocket, P2PManager p2pManager, GameEngine gameEngine,
+                         SecurityManager security)
             throws IOException {
         this.peerSocket  = peerSocket;
         this.p2pManager  = p2pManager;
         this.gameEngine  = gameEngine;
+        this.security    = security;
         this.in          = new BufferedReader(
                 new InputStreamReader(peerSocket.getInputStream(), "UTF-8"));
         this.peerName    = null;
@@ -83,7 +87,12 @@ public class PeerListener extends Thread {
         try {
             String rawLine;
             while ((rawLine = in.readLine()) != null) {
-                String trimmed = rawLine.trim();
+                if (!security.verifySignature(rawLine)) {
+                    logger.logEvent("PeerListener : HMAC invalide, message P2P rejeté de "
+                            + peerSocket.getInetAddress().getHostAddress());
+                    continue;
+                }
+                String trimmed = security.stripSignature(rawLine).trim();
                 handleRawLine(trimmed);
             }
         } catch (SocketTimeoutException e) {
