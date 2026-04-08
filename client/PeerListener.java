@@ -10,6 +10,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -65,6 +66,8 @@ public class PeerListener extends Thread {
         this.in          = new BufferedReader(
                 new InputStreamReader(peerSocket.getInputStream(), "UTF-8"));
         this.peerName    = null;
+        // Timeout P2P : si un pair ne répond plus dans les 5 minutes, couper la connexion.
+        peerSocket.setSoTimeout(300_000);
         setName("PeerListener-" + peerSocket.getInetAddress().getHostAddress());
         setDaemon(true);
     }
@@ -83,6 +86,13 @@ public class PeerListener extends Thread {
                 String trimmed = rawLine.trim();
                 handleRawLine(trimmed);
             }
+        } catch (SocketTimeoutException e) {
+            logger.logEvent("PeerListener : timeout d'inactivité P2P avec "
+                    + (peerName != null ? peerName : peerSocket.getInetAddress().getHostAddress())
+                    + " — connexion fermée après 5 minutes sans activité.");
+            System.out.println("[P2P] Connexion avec "
+                    + (peerName != null ? peerName : "un pair")
+                    + " fermée : inactivité de 5 minutes.");
         } catch (IOException e) {
             logger.logError("PeerListener : connexion perdue avec "
                     + (peerName != null ? peerName : peerSocket.getInetAddress().getHostAddress()), e);
@@ -99,6 +109,15 @@ public class PeerListener extends Thread {
 
     private void handleRawLine(String rawLine) {
         if (rawLine == null || rawLine.isEmpty()) return;
+
+        // Limite la taille des messages P2P pour prévenir les attaques par saturation mémoire.
+        if (rawLine.length() > 1_024) {
+            logger.logError("PeerListener : message P2P trop long ("
+                    + rawLine.length() + " caractères) de "
+                    + (peerName != null ? peerName : peerSocket.getInetAddress().getHostAddress())
+                    + ". Message ignoré.", null);
+            return;
+        }
 
         Message msg;
         try {
@@ -121,6 +140,7 @@ public class PeerListener extends Thread {
             case NEXT_TURN  -> onNextTurn(msg);
             case TURN_ANNOUNCEMENT -> onTurnAnnouncement(msg);
             case PLAYER_OUT -> onPlayerOut(msg);
+            case SET_ATTEMPTS -> onSetAttempts(msg);
             default         -> logger.logError(
                     "PeerListener : commande P2P inattendue : " + msg.getCommand());
         }
@@ -305,12 +325,20 @@ public class PeerListener extends Thread {
             int correctColors    = Integer.parseInt(msg.getField(0));
             int correctPositions = Integer.parseInt(msg.getField(1));
             Feedback feedback    = new Feedback(correctColors, correctPositions);
-            logger.logEvent("Feedback reçu → Couleurs OK : " + correctColors
+            logger.logEvent("Feedback reçu -> Couleurs OK : " + correctColors
                     + " | Positions OK : " + correctPositions
-                    + (feedback.isWin() ? " ★ VICTOIRE !" : ""));
+                    + (feedback.isWin() ? " VICTOIRE !" : ""));
             if (feedback.isWin()) {
+                System.out.println("[GAME] Feedback : " + correctColors + " couleur(s) correcte(s), "
+                        + correctPositions + " position(s) correcte(s) -- VOUS AVEZ GAGNE !");
                 gameEngine.setGameOver(true);
                 logger.logEvent("PeerListener : marque la manche comme terminée (WINNER)." );
+            } else {
+                System.out.println("[GAME] Feedback : " + correctColors + " couleur(s) correcte(s), "
+                        + correctPositions + " position(s) correcte(s)");
+                if (gameEngine.getAttemptsLeft() > 0) {
+                    System.out.println("[GAME] Tentatives restantes : " + gameEngine.getAttemptsLeft());
+                }
             }
         } catch (ParseException | NumberFormatException e) {
             logger.logError("PeerListener : FEEDBACK mal formé.", e);
@@ -384,6 +412,25 @@ public class PeerListener extends Thread {
     }
 
     /**
+     * GG|SET_ATTEMPTS|nombre — l'admin modifie le nombre de tentatives avant le secret.
+     */
+    private void onSetAttempts(Message msg) {
+        try {
+            msg.requireFields(1);
+            int attempts = Integer.parseInt(msg.getField(0));
+            p2pManager.getGameEngine().setMaxAttempts(attempts);
+            System.out.println("[GAME] Nombre de tentatives mis à jour : " + attempts + " par joueur.");
+            logger.logEvent("PeerListener : tentatives fixées à " + attempts + ".");
+        } catch (ParseException e) {
+            logger.logError("PeerListener : SET_ATTEMPTS mal formé.", e);
+        } catch (NumberFormatException e) {
+            logger.logError("PeerListener : SET_ATTEMPTS — valeur non entière : " + msg.getField(0), null);
+        } catch (IllegalArgumentException e) {
+            logger.logError("PeerListener : SET_ATTEMPTS — valeur invalide : " + e.getMessage(), null);
+        }
+    }
+
+    /**
      * GG|NEXT_TURN|nom_joueur
      */
     private void onNextTurn(Message msg) {
@@ -391,9 +438,14 @@ public class PeerListener extends Thread {
             msg.requireFields(1);
             String nextPlayer = msg.getField(0);
             p2pManager.setCurrentTurnPlayer(nextPlayer);
-            logger.logEvent("PeerListener : tour passé à " + nextPlayer);
+            if (nextPlayer.equals(p2pManager.getPlayerName())) {
+                System.out.println("[GAME] C'est votre tour de deviner !");
+            } else {
+                System.out.println("[GAME] C'est le tour de " + nextPlayer + " de deviner.");
+            }
+            logger.logEvent("PeerListener : tour passe a " + nextPlayer);
         } catch (ParseException e) {
-            logger.logError("PeerListener : NEXT_TURN mal formé.", e);
+            logger.logError("PeerListener : NEXT_TURN mal forme.", e);
         }
     }
 

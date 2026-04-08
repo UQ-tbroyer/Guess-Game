@@ -7,11 +7,14 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.spec.InvalidKeySpecException;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Mac;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -61,11 +64,35 @@ public class SecurityManager {
     /** Mot de passe par défaut (développement uniquement). */
     private static final String KEYSTORE_DEFAULT_PASS = "changeit";
 
+    /** Variable d'environnement pour une clé HMAC dédiée (prioritaire sur le keystore). */
+    private static final String HMAC_KEY_ENV = "GG_HMAC_KEY";
+
+    /** Sel statique pour la dérivation PBKDF2 de la clé HMAC. */
+    private static final byte[] HMAC_PBKDF2_SALT = "GG_HMAC_STATIC_SALT_V1".getBytes(StandardCharsets.UTF_8);
+
+    /** Nombre d'itérations PBKDF2. */
+    private static final int PBKDF2_ITERATIONS = 100_000;
+
+    /** Longueur en bits de la clé dérivée. */
+    private static final int PBKDF2_KEY_BITS = 256;
+
     /** Nombre maximum de messages autorisés par fenêtre temporelle. */
     private static final int MAX_MESSAGES_PER_WINDOW = 30;
 
     /** Durée de la fenêtre de rate limiting en millisecondes. */
     private static final long WINDOW_MS = 1_000L;
+
+    /** Nombre de violations de rate limit avant déconnexion forcée. */
+    private static final int MAX_RATE_VIOLATIONS = 5;
+
+    /** Taille maximale d'un message GG en caractères. */
+    public static final int MAX_MESSAGE_SIZE = 1_024;
+
+    /** Délai maximum pour s'authentifier (CONNECT) après connexion TCP (ms). */
+    public static final int AUTH_TIMEOUT_MS = 30_000;
+
+    /** Délai d'inactivité maximum après authentification (ms). 5 minutes. */
+    public static final int IDLE_TIMEOUT_MS = 300_000;
 
     /** Séparateur HMAC ajouté à la fin d'un message signé. */
     private static final String HMAC_SEPARATOR = "##";
@@ -101,6 +128,9 @@ public class SecurityManager {
      */
     private final Map<String, RateLimitEntry> rateLimitMap;
 
+    /** Compteur de violations de rate limit par identifiant. */
+    private final Map<String, AtomicInteger> violationsMap;
+
     // -------------------------------------------------------------------------
     // Constructeur
     // -------------------------------------------------------------------------
@@ -111,7 +141,8 @@ public class SecurityManager {
      * En cas d'échec, bascule en mode dégradé (pas de TLS ni HMAC).
      */
     public SecurityManager() {
-        this.rateLimitMap = new ConcurrentHashMap<>();
+        this.rateLimitMap  = new ConcurrentHashMap<>();
+        this.violationsMap = new ConcurrentHashMap<>();
         initSecurity();
     }
 
@@ -152,9 +183,32 @@ public class SecurityManager {
             sslContext = SSLContext.getInstance("TLS");
             sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-            // Dériver la clé HMAC depuis le mot de passe
-            byte[] keyBytes = pass.getBytes(StandardCharsets.UTF_8);
-            hmacKey = new SecretKeySpec(keyBytes, HMAC_ALGO);
+            // Dériver la clé HMAC via PBKDF2 (bien plus sûr que les octets bruts du mot de passe).
+            // Une clé dédiée via GG_HMAC_KEY a la priorité.
+            String hmacKeyEnv = System.getenv(HMAC_KEY_ENV);
+            if (hmacKeyEnv != null && !hmacKeyEnv.isBlank()) {
+                byte[] keyBytes = Base64.getDecoder().decode(hmacKeyEnv.trim());
+                hmacKey = new SecretKeySpec(keyBytes, HMAC_ALGO);
+                DebugLogger.getInstance().logEvent(
+                        "[SecurityManager] Clé HMAC chargée depuis " + HMAC_KEY_ENV + "."
+                );
+            } else {
+                try {
+                    SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+                    PBEKeySpec spec = new PBEKeySpec(
+                            pass.toCharArray(), HMAC_PBKDF2_SALT, PBKDF2_ITERATIONS, PBKDF2_KEY_BITS);
+                    byte[] derived = skf.generateSecret(spec).getEncoded();
+                    spec.clearPassword();
+                    hmacKey = new SecretKeySpec(derived, HMAC_ALGO);
+                    DebugLogger.getInstance().logEvent(
+                            "[SecurityManager] Clé HMAC dérivée via PBKDF2WithHmacSHA256."
+                    );
+                } catch (InvalidKeySpecException e2) {
+                    DebugLogger.getInstance().logError(
+                            "[SecurityManager] Échec PBKDF2, clé HMAC désactivée.", e2);
+                    hmacEnabled = false;
+                }
+            }
 
             tlsEnabled  = true;
             hmacEnabled = true;
@@ -208,7 +262,13 @@ public class SecurityManager {
                 true   // autoClose : ferme rawSocket quand sslSocket est fermé
         );
         sslSocket.setUseClientMode(false); // mode serveur
-        sslSocket.startHandshake();
+        try {
+            sslSocket.startHandshake();
+        } catch (IOException e) {
+            // Nettoyage en cas d'échec du handshake pour éviter les fuites de socket
+            try { sslSocket.close(); } catch (IOException ignored) {}
+            throw e;
+        }
 
         DebugLogger.getInstance().logEvent(
                 "[SecurityManager] TLS handshake réussi avec " +
@@ -318,6 +378,32 @@ public class SecurityManager {
                 playerName, k -> new RateLimitEntry()
         );
         return entry.tryConsume();
+    }
+
+    /**
+     * Enregistre une violation de sécurité (rate limit dépassé, HMAC invalide).
+     * @param identifier identifiant du client (nom ou IP)
+     * @return true si le seuil de violations est atteint et la connexion doit être fermée
+     */
+    public boolean recordViolation(String identifier) {
+        if (!SECURITY_ENABLED) return false;
+        AtomicInteger count = violationsMap.computeIfAbsent(
+                identifier, k -> new AtomicInteger(0));
+        int violations = count.incrementAndGet();
+        if (violations >= MAX_RATE_VIOLATIONS) {
+            DebugLogger.getInstance().logEvent(
+                    "[SecurityManager] Seuil de violations atteint pour " + identifier
+                            + " (" + violations + "). Déconnexion recommandée.");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Réinitialise le compteur de violations d'un client.
+     */
+    public void resetViolations(String identifier) {
+        violationsMap.remove(identifier);
     }
 
     /**

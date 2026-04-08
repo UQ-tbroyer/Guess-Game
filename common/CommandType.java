@@ -118,6 +118,13 @@ public enum CommandType {
     NEW_GAME,
 
     /**
+     * Admin → Tous les pairs :
+     * GG|SET_ATTEMPTS|nombre
+     * Modifie le nombre de tentatives par joueur avant que le secret soit défini.
+     */
+    SET_ATTEMPTS,
+
+    /**
      * Client → Serveur : GG|GAME_OVER|WIN|joueur or GG|GAME_OVER|LOSE|NONE
      * Notifie la fin d'une partie P2P pour permettre la réutilisation de la salle.
      */

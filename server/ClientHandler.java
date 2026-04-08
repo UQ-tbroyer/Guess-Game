@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 
 /**
  * ClientHandler — thread dédié à un client connecté au serveur GG.
@@ -71,6 +72,8 @@ public class ClientHandler implements Runnable {
         this.permissions = server.getPermissionManager();
         this.security    = server.getSecurityManager();
         this.clientIp    = socket.getInetAddress().getHostAddress();
+        // Délai d'authentification : le client doit envoyer CONNECT dans les 30 secondes.
+        socket.setSoTimeout(SecurityManager.AUTH_TIMEOUT_MS);
         this.in  = new BufferedReader(
                 new InputStreamReader(socket.getInputStream(), "UTF-8"));
         this.out = new PrintWriter(
@@ -89,6 +92,14 @@ public class ClientHandler implements Runnable {
             while ((rawLine = in.readLine()) != null) {
                 handleRawLine(rawLine.trim());
             }
+        } catch (SocketTimeoutException e) {
+            if (playerName == null) {
+                logger.logEvent("ClientHandler : timeout d'authentification pour " + clientIp
+                        + ". Connexion fermée.");
+            } else {
+                logger.logEvent("ClientHandler : timeout d'inactivité pour " + playerName
+                        + ". Connexion fermée.");
+            }
         } catch (IOException e) {
             if (playerName != null) {
                 logger.logError("ClientHandler : connexion perdue avec " + playerName, e);
@@ -105,8 +116,24 @@ public class ClientHandler implements Runnable {
     private void handleRawLine(String rawLine) {
         if (rawLine == null || rawLine.isEmpty()) return;
 
+        // Limite la taille des messages pour prévenir les attaques par saturation mémoire.
+        if (rawLine.length() > SecurityManager.MAX_MESSAGE_SIZE) {
+            String identifier = (playerName != null) ? playerName : clientIp;
+            logger.logEvent("ClientHandler : message trop long (" + rawLine.length()
+                    + " caractères) de " + identifier + ". Connexion fermée.");
+            sendError("Message trop long.");
+            closeConnection();
+            return;
+        }
+
         if (!security.verifySignature(rawLine)) {
+            String identifier = (playerName != null) ? playerName : clientIp;
             sendError("Signature HMAC invalide.");
+            if (security.recordViolation(identifier)) {
+                logger.logEvent("ClientHandler : trop de violations HMAC de " + identifier
+                        + ". Connexion fermée.");
+                closeConnection();
+            }
             return;
         }
         rawLine = security.stripSignature(rawLine);
@@ -114,6 +141,11 @@ public class ClientHandler implements Runnable {
         String clientIdentifier = (playerName != null) ? playerName : clientIp;
         if (!security.checkRateLimit(clientIdentifier)) {
             sendError("Rate limit dépassé. Veuillez ralentir.");
+            if (security.recordViolation(clientIdentifier)) {
+                logger.logEvent("ClientHandler : trop de violations de rate limit de "
+                        + clientIdentifier + ". Connexion fermée.");
+                closeConnection();
+            }
             return;
         }
 
@@ -184,6 +216,11 @@ public class ClientHandler implements Runnable {
         }
 
         this.playerName = name;
+        // Authentification réussie : passer au timeout d'inactivité (5 min).
+        try {
+            socket.setSoTimeout(SecurityManager.IDLE_TIMEOUT_MS);
+        } catch (IOException ignored) {}
+        security.resetViolations(clientIp);
         send(MessageParser.serialize(CommandType.CONNECTED, playerName));
         logger.logEvent("Joueur connecté : " + playerName + " depuis " + clientIp);
     }
@@ -722,6 +759,13 @@ public class ClientHandler implements Runnable {
     private void closeSilently() {
         try { if (!socket.isClosed()) socket.close(); }
         catch (IOException ignored) {}
+    }
+
+    /**
+     * Ferme la connexion immédiatement (utilisé après une violation de sécurité).
+     */
+    private void closeConnection() {
+        try { socket.close(); } catch (IOException ignored) {}
     }
 
     // -------------------------------------------------------------------------

@@ -350,9 +350,11 @@ public class P2PManager {
                 String nextPlayer = getCurrentTurnPlayer();
                 if (nextPlayer != null) {
                     broadcast(MessageParser.serialize(CommandType.NEXT_TURN, nextPlayer));
-                    // Alice ne reçoit pas ses propres broadcasts — l'informer localement si c'est son tour
+                    // Alice ne reçoit pas ses propres broadcasts — l'informer localement
                     if (nextPlayer.equals(playerName)) {
                         System.out.println("[GAME] C'est votre tour de deviner !");
+                    } else {
+                        System.out.println("[GAME] C'est le tour de " + nextPlayer + " de deviner.");
                     }
                 }
             } catch (Exception e) {
