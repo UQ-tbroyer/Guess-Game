@@ -70,8 +70,9 @@ public class PeerListener extends Thread {
         this.in          = new BufferedReader(
                 new InputStreamReader(peerSocket.getInputStream(), "UTF-8"));
         this.peerName    = null;
-        // Timeout P2P : si un pair ne répond plus dans les 5 minutes, couper la connexion.
-        peerSocket.setSoTimeout(300_000);
+        // Timeout P2P en attente de partie. Disabled pendant la partie (voir onSecretSet).
+        // 0 = pas de timeout pour ne pas expulser un joueur qui réfléchit.
+        peerSocket.setSoTimeout(0);
         setName("PeerListener-" + peerSocket.getInetAddress().getHostAddress());
         setDaemon(true);
     }
@@ -217,6 +218,9 @@ public class PeerListener extends Thread {
 
             // Informe P2PManager du détenteur pour le routage de sendGuess()
             p2pManager.setCurrentSecretOwner(owner);
+
+            // Partie démarrée : désactiver le timeout pour ne pas couper un joueur qui réfléchit
+            try { peerSocket.setSoTimeout(0); } catch (IOException ignored) {}
 
             if (isRandom) {
                 // Cas 1 : secret aléatoire, l'admin est aussi joueur — ne pas le retirer des tours
@@ -392,6 +396,8 @@ public class PeerListener extends Thread {
             }
 
             gameEngine.setGameOver(true);
+            // Partie terminée : remettre un timeout d'inactivité (5 min) en attendant newgame
+            try { peerSocket.setSoTimeout(300_000); } catch (IOException ignored) {}
             // Indiquer les actions disponibles selon le rôle
             String adminAfterOver = p2pManager.getRoomAdminName();
             if (adminAfterOver != null && adminAfterOver.equals(p2pManager.getPlayerName())) {
@@ -422,6 +428,8 @@ public class PeerListener extends Thread {
             return;
         }
         p2pManager.resetForNewGame();
+        // En attente du prochain SECRET_SET : remettre timeout d'inactivité
+        try { peerSocket.setSoTimeout(300_000); } catch (IOException ignored) {}
         System.out.println("[GAME] Nouvelle manche ! Les connexions ont été réinitialisées.");
         if (admin != null && !admin.equals(p2pManager.getPlayerName())) {
             System.out.println("[GAME] En attente que " + admin + " définisse le secret...");

@@ -381,9 +381,9 @@ public class P2PManager {
 
         if (gameEngine.isGameOver()) {
             System.out.println("[GAME] Vous avez épuisé vos tentatives. En attente du feedback...");
-        } else if (gameEngine.getAttemptsLeft() > 0) {
-            System.out.println("[GAME] Tentatives restantes : " + gameEngine.getAttemptsLeft());
         }
+        // Les tentatives restantes sont affichées à la réception du FEEDBACK (PeerListener.onFeedback)
+        // pour éviter d'afficher deux fois la même valeur.
     }
 
     /**
