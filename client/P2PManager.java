@@ -105,6 +105,9 @@ public class P2PManager {
     /** Vrai si l'admin est aussi joueur (secret aléatoire, Cas 1). */
     private volatile boolean adminIsPlayer = false;
 
+    /** Vrai si un guess a été envoyé et qu'on attend encore le feedback (anti double-guess). */
+    private volatile boolean waitingForFeedback = false;
+
     private final DebugLogger logger = DebugLogger.getInstance();
 
     /** Gestionnaire de sécurité pour TLS, HMAC, rate limiting, sanitisation. */
@@ -271,6 +274,11 @@ public class P2PManager {
             System.out.println("[P2PManager] Vous n'avez plus de tentatives. Impossible d'envoyer un nouveau guess.");
             return;
         }
+        if (waitingForFeedback) {
+            logger.logEvent("P2PManager : guess ignoré car en attente du feedback du guess précédent.");
+            System.out.println("[P2PManager] Attendez le feedback avant de rejouer.");
+            return;
+        }
         if (colorNames == null || colorNames.size() != GameEngine.COMBINATION_SIZE) {
             logger.logError("P2PManager : sendGuess — liste invalide (" + colorNames + ")");
             return;
@@ -365,6 +373,7 @@ public class P2PManager {
 
         // Envoie le GUESS uniquement au propriétaire du secret — les autres joueurs ne doivent pas le voir
         if (currentSecretOwner != null) {
+            waitingForFeedback = true;
             sendToPeer(currentSecretOwner, msg);
         } else {
             logger.logEvent("P2PManager : aucun propriétaire du secret connu, GUESS non envoyé.");
@@ -487,6 +496,7 @@ public class P2PManager {
         currentSecretOwner = null;
         lastAnnouncedTurnPlayer = null;
         gameOverReportedToServer = false;
+        waitingForFeedback = false;
         adminIsPlayer = false;
         currentTurnIndex = 0;
         gameCount++;
@@ -827,6 +837,7 @@ public class P2PManager {
         currentSecretOwner   = null;
         roomAdminName        = null;
         adminIsPlayer        = false;
+        waitingForFeedback   = false;
         playersInOrder.clear();
         initialPlayersInOrder.clear();
         currentTurnIndex     = 0;
@@ -886,6 +897,7 @@ public class P2PManager {
     public String     getPlayerName()        { return playerName; }
     public String     getCurrentSecretOwner(){ return currentSecretOwner; }
     public int        getListeningPort()     { return listeningPort; }
+    public void       clearWaitingForFeedback() { waitingForFeedback = false; }
 
     // -------------------------------------------------------------------------
     // P2P Acceptor Thread

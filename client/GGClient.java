@@ -33,6 +33,7 @@ public class GGClient {
     private ServerListener serverListener;
 
     private volatile boolean playingServerGame = false;
+    private volatile String currentRoom = null;
 
     // ── Constructeur ────────────────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ public class GGClient {
     public CLIHandler getCLIHandler()      { return cliHandler;  }
     public boolean    isPlayingServerGame() { return playingServerGame; }
     public void       setPlayingServerGame(boolean playing) { playingServerGame = playing; }
+    public String     getCurrentRoom()      { return currentRoom; }
+    public void       setCurrentRoom(String room) { this.currentRoom = room; }
     /**
      * Notifie le serveur de la fin de partie pour la salle courante (P2P).
      */

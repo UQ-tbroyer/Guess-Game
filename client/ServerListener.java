@@ -2,7 +2,10 @@ package client;
 
 import java.io.*;
 import java.net.*;
+import java.util.HashMap;
 import java.util.Map;
+
+
 
 /**
  * ServerListener — Thread d'écoute passive du serveur.
@@ -53,6 +56,7 @@ public class ServerListener extends Thread {
         try {
             String line;
             while (running && (line = in.readLine()) != null) {
+
                 handleMessage(line.trim());
             }
         } catch (IOException e) {
@@ -102,7 +106,7 @@ public class ServerListener extends Thread {
 
             case "JOINED_ROOM" -> onJoinedRoom(parts);
 
-            case "LEFT_ROOM" -> onLeftRoom(parts);
+            case "LEFT_ROOM" -> { client.setCurrentRoom(null); onLeftRoom(parts); }
 
             case "PLAYER_KICKED" -> onPlayerKicked(parts);
 
@@ -192,6 +196,7 @@ public class ServerListener extends Thread {
     private void onJoinedRoom(String[] parts) {
         String room    = (parts.length > 2) ? parts[2] : "?";
         String players = (parts.length > 3) ? parts[3] : "";
+        client.setCurrentRoom(room);
         System.out.println("[ServerListener] Rejoint la salle : " + room);
         if (!players.isEmpty()) {
             String[] playerList = players.split(",");
@@ -244,6 +249,7 @@ public class ServerListener extends Thread {
                 client.setPlayingServerGame(false);
                 System.out.println("[ServerListener] P2P fermé suite à l'expulsion.");
             }
+            // Recréer le P2PManager pour pouvoir rejoindre une autre salle
             P2PManager newP2p = new P2PManager(client.getPlayerName(), client);
             try {
                 newP2p.startListening(0);
@@ -267,42 +273,57 @@ public class ServerListener extends Thread {
      */
     private void onGameStarted(String rawMessage) {
         System.out.println("[ServerListener] Partie démarrée ! Initialisation P2P...");
-        System.out.println("[ServerListener] Astuce : si vous êtes admin, définissez le secret avec 'secret c1 c2 c3 c4'.");
+
         String[] parts = rawMessage.split("\\|");
-        int attempts = 0;
-        String admin = null;
-        if (parts.length > 3) {
+        int attempts = -1;
+        String addressesPart;
+
+        if (parts.length >= 6) {
+            // Format courant : GG|GAME_STARTED|nom_salle|max_tentatives|admin|joueur1:ip:port,...
             try {
                 attempts = Integer.parseInt(parts[3]);
-            } catch (NumberFormatException ignored) {
-                attempts = 0;
+            } catch (NumberFormatException e) {
+                System.err.println("[ServerListener] Format de tentative invalide : " + parts[3]);
             }
+            addressesPart = parts[5];
+        } else if (parts.length == 5) {
+            // Format étendu : GG|GAME_STARTED|nom_salle|max_tentatives|joueur1:ip:port,...
+            try {
+                attempts = Integer.parseInt(parts[3]);
+            } catch (NumberFormatException e) {
+                System.err.println("[ServerListener] Format de tentative invalide : " + parts[3]);
+            }
+            addressesPart = parts[4];
+        } else if (parts.length == 4) {
+            // Ancien format : GG|GAME_STARTED|nom_salle|joueur1:ip:port,...
+            addressesPart = parts[3];
+        } else {
+            System.err.println("[ServerListener] GAME_STARTED mal formé : " + rawMessage);
+            return;
         }
-        if (parts.length > 4) {
-            admin = parts[4];
-        }
-        if (attempts > 0) {
-            System.out.println("[ServerListener] Tentatives par joueur : " + attempts);
-        }
-        if (admin != null && !admin.isBlank()) {
-            System.out.println("[ServerListener] Admin de la salle : " + admin);
-        }
+
+        // Extraire le nom de l'admin si format étendu (parts[4])
+        String adminName = (parts.length >= 6) ? parts[4] : null;
+
         P2PManager p2p = client.getP2PManager();
         if (p2p != null) {
             p2p.resetForNewGame();
             if (attempts > 0) {
                 p2p.getGameEngine().setMaxAttempts(attempts);
+                System.out.println("[ServerListener] Tentatives pour cette manche : " + attempts);
             }
-            if (admin != null) {
-                p2p.setRoomAdminName(admin);
+            if (adminName != null && !adminName.isBlank()) {
+                p2p.setRoomAdminName(adminName);
             }
-            Map<String, String> peerAddresses = parseAddresses(rawMessage);
-            p2p.connectToPeers(peerAddresses);
+            Map<String, String> addresses = parseAddresses(addressesPart);
+            p2p.connectToPeers(addresses);
             // Set players list for turns (admin inclus par défaut, sera retiré si Cas 2)
-            java.util.Set<String> playersSet = new java.util.LinkedHashSet<>(peerAddresses.keySet());
+            java.util.Set<String> playersSet = new java.util.LinkedHashSet<>(addresses.keySet());
             playersSet.add(client.getPlayerName());
             java.util.List<String> players = new java.util.ArrayList<>(playersSet);
             p2p.setPlayersList(players);
+        } else {
+            System.err.println("[ServerListener] P2PManager est null !");
         }
     }
 
@@ -379,27 +400,17 @@ public class ServerListener extends Thread {
      *
      * @return Un tableau de type {"nom:ip:port", ...}
      */
-    private java.util.Map<String, String> parseAddresses(String rawMessage) {
-        java.util.Map<String, String> addresses = new java.util.HashMap<>();
-        String[] parts = rawMessage.split("\\|");
-        if (parts.length < 4) return addresses;
+    private Map<String, String> parseAddresses(String addressesPart) {
+        Map<String, String> addresses = new HashMap<>();
+        String[] entries = addressesPart.split(",");
 
-        String payload;
-        if (parts.length >= 6) {
-            payload = parts[5];
-        } else if (parts.length >= 5) {
-            payload = parts[4];
-        } else {
-            payload = parts[3];
-        }
-
-        // payload = "joueur1:ip1:port1,joueur2:ip2:port2"
-        String[] entries = payload.split(",");
         for (String entry : entries) {
+            if (entry == null || entry.trim().isEmpty()) continue;
             String[] tokens = entry.trim().split(":");
             if (tokens.length == 3) {
-                // clé = nom, valeur = ip:port
                 addresses.put(tokens[0], tokens[1] + ":" + tokens[2]);
+            } else {
+                System.err.println("[ServerListener] Entrée invalide: " + entry);
             }
         }
         return addresses;

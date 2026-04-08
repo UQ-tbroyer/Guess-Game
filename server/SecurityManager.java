@@ -111,7 +111,7 @@ public class SecurityManager {
      * true = TLS, HMAC et rate limiting sont actifs (mode production).
      * false = toutes les opérations de sécurité deviennent des no-ops (mode dev/test).
      */
-    public static final boolean SECURITY_ENABLED = true;
+    public static final boolean SECURITY_ENABLED = false;
 
     // -------------------------------------------------------------------------
     // État

@@ -8,6 +8,7 @@ package common;
  * via DebugLogger et provoquer l'envoi d'un message GG|ERROR au client fautif
  * (côté serveur) ou l'affichage d'un message d'erreur en CLI (côté client).
  */
+@SuppressWarnings("serial")
 public class ParseException extends Exception {
 
     /**

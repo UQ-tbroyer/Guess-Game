@@ -334,6 +334,7 @@ public class PeerListener extends Thread {
             int correctColors    = Integer.parseInt(msg.getField(0));
             int correctPositions = Integer.parseInt(msg.getField(1));
             Feedback feedback    = new Feedback(correctColors, correctPositions);
+            p2pManager.clearWaitingForFeedback();
             logger.logEvent("Feedback reçu -> Couleurs OK : " + correctColors
                     + " | Positions OK : " + correctPositions
                     + (feedback.isWin() ? " VICTOIRE !" : ""));
@@ -365,8 +366,9 @@ public class PeerListener extends Thread {
             logger.logEvent(consoleMsg);
             System.out.println("[GAME] " + consoleMsg);
             gameEngine.setGameOver(true);
-            p2pManager.broadcast("GG|GAME_OVER|WIN|" + winner);
-            logger.logEvent("PeerListener : manche terminée suite à WINNER — GAME_OVER diffusé.");
+            // Ne pas re-diffuser GAME_OVER : le détenteur du secret l'a déjà broadcasté via sendFeedback().
+            // Un second broadcast déclencherait une cascade de duplications.
+            logger.logEvent("PeerListener : manche terminée suite à WINNER.");
         } catch (ParseException e) {
             logger.logError("PeerListener : WINNER mal formé.", e);
         }

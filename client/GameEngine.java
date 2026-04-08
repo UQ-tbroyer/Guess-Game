@@ -129,10 +129,10 @@ public class GameEngine {
 
     /**
      * Vérifie si ce client peut encore proposer une combinaison.
-     * Les tentatives illimitées sont représentées par attemptsLeft == 0.
+     * Les tentatives illimitées sont représentées par maxAttempts == 0.
      */
     public boolean canMakeGuess() {
-        return !gameOver && (attemptsLeft == 0 || attemptsLeft > 0);
+        return !gameOver && (maxAttempts == 0 || attemptsLeft > 0);
     }
 
     /**

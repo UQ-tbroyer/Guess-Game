@@ -6,7 +6,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -28,6 +30,7 @@ import java.util.UUID;
  *  - Cette classe n'est pas thread-safe en elle-même : la synchronisation est
  *    assurée par Room ou par ClientHandler qui l'appelle dans un bloc synchronized.
  */
+@SuppressWarnings("unused")
 public class GameSession {
 
     /** Nombre de couleurs dans une combinaison. */
@@ -60,8 +63,8 @@ public class GameSession {
      */
     private String secretOwner;
 
-    /** Nombre de tentatives restantes. */
-    private int attemptsLeft;
+    /** Nombre de tentatives restantes par joueur. */
+    private final Map<String, Integer> playerAttempts;
 
     /** Nombre maximum de tentatives (conservé pour les logs et le rapport). */
     private final int maxAttempts;
@@ -92,7 +95,7 @@ public class GameSession {
         this.sessionId   = UUID.randomUUID();
         this.roomName    = roomName;
         this.maxAttempts = maxAttempts;
-        this.attemptsLeft = maxAttempts;
+        this.playerAttempts = new HashMap<>();
         this.guessLog    = new ArrayList<>();
         this.status      = SessionStatus.WAITING;
         this.createdAt   = Instant.now();
@@ -169,7 +172,8 @@ public class GameSession {
      *     pour chaque couleur, min(occurrences dans guess, occurrences dans secret).
      *     Le résultat inclut les positions correctes.
      *
-     * Met à jour attemptsLeft et change le statut si nécessaire.
+     * Met à jour les tentatives du joueur et change le statut si nécessaire.
+     * La session passe à LOST uniquement si TOUS les joueurs ont épuisé leurs tentatives.
      *
      * @param guess liste de {@value #COMBO_SIZE} couleurs proposée par le joueur
      * @param playerName nom du joueur qui propose
@@ -190,6 +194,11 @@ public class GameSession {
                     "checkGuess() ne peut être appelé que pour les parties PLAY_SERVER " +
                             "(secretCombination est null pour les parties P2P)."
             );
+        }
+
+        // --- Initialiser les tentatives du joueur si nécessaire ---
+        if (!playerAttempts.containsKey(playerName)) {
+            playerAttempts.put(playerName, maxAttempts);
         }
 
         // --- Calcul des positions correctes ---
@@ -213,8 +222,9 @@ public class GameSession {
         }
         int correctColors = correctPositions + colorMatches;
 
-        // --- Décrément des tentatives ---
-        attemptsLeft--;
+        // --- Décrément des tentatives du joueur ---
+        int attemptsLeftForPlayer = playerAttempts.get(playerName) - 1;
+        playerAttempts.put(playerName, attemptsLeftForPlayer);
 
         // --- Enregistrement dans l'historique ---
         GuessRecord record = new GuessRecord(
@@ -228,21 +238,31 @@ public class GameSession {
             endedAt = Instant.now();
             DebugLogger.getInstance().logEvent(
                     "Session [" + sessionId + "] : GAGNÉE par " + playerName +
-                            " en " + (maxAttempts - attemptsLeft) + " tentative(s)."
+                            " en " + (maxAttempts - attemptsLeftForPlayer) + " tentative(s)."
             );
-        } else if (attemptsLeft <= 0) {
-            status  = SessionStatus.LOST;
-            endedAt = Instant.now();
-            DebugLogger.getInstance().logEvent(
-                    "Session [" + sessionId + "] : PERDUE — plus de tentatives."
-            );
+        } else if (attemptsLeftForPlayer <= 0) {
+            // Vérifier si TOUS les joueurs ont épuisé leurs tentatives
+            boolean allPlayersOutOfAttempts = true;
+            for (int attempts : playerAttempts.values()) {
+                if (attempts > 0) {
+                    allPlayersOutOfAttempts = false;
+                    break;
+                }
+            }
+            if (allPlayersOutOfAttempts) {
+                status  = SessionStatus.LOST;
+                endedAt = Instant.now();
+                DebugLogger.getInstance().logEvent(
+                        "Session [" + sessionId + "] : PERDUE — plus de tentatives pour tous les joueurs."
+                );
+            }
         }
 
         DebugLogger.getInstance().logEvent(
                 "Session [" + sessionId + "] GUESS de " + playerName +
                         " → couleursCorrectes=" + correctColors +
                         " positionsCorrectes=" + correctPositions +
-                        " tentativesRestantes=" + attemptsLeft
+                        " tentativesRestantesJoueur=" + attemptsLeftForPlayer
         );
 
         return new Feedback(correctColors, correctPositions);
@@ -273,7 +293,12 @@ public class GameSession {
     public UUID getSessionId()               { return sessionId; }
     public String getRoomName()              { return roomName; }
     public String getSecretOwner()           { return secretOwner; }
-    public int getAttemptsLeft()             { return attemptsLeft; }
+    public int getAttemptsLeft(String playerName) {
+        return playerAttempts.getOrDefault(playerName, maxAttempts);
+    }
+    public Map<String, Integer> getPlayerAttempts() {
+        return Collections.unmodifiableMap(new HashMap<>(playerAttempts));
+    }
     public int getMaxAttempts()              { return maxAttempts; }
     public SessionStatus getStatus()         { return status; }
     public Instant getCreatedAt()            { return createdAt; }

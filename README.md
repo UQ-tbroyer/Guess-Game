@@ -1,7 +1,7 @@
 # 🎨 Guess Game — Protocole GG
 
-> Un jeu de devinette de couleurs en réseau développé dans le cadre du cours **6GEN723 — Réseaux d'ordinateurs** à l'UQAC.  
-> Coordination client–serveur via TCP, jeu en pair-à-pair, et protocole applicatif personnalisé.
+> Une implémentation réseau du **Mastermind** développée dans le cadre du cours **6GEN723 — Réseaux d'ordinateurs** à l'UQAC.  
+> Protocole applicatif TCP conçu from scratch (GG Protocol), architecture hybride client–serveur + pair-à-pair, et tolérance aux pannes.
 
 ---
 
@@ -29,23 +29,30 @@
 
 ## Aperçu
 
-**Guess Game** est un jeu multijoueur de devinette de combinaisons de couleurs.  
-Un joueur choisit une combinaison secrète de **4 couleurs** (parmi Rouge, Vert, Bleu, Jaune, Orange).  
-Les autres joueurs tentent de la deviner. Après chaque proposition, le détenteur du secret répond avec :
+**Guess Game** est une implémentation multijoueur en réseau du **Mastermind** classique.
+
+La décision d'architecture centrale : **le serveur ne touche pas au jeu lui-même**. Il gère uniquement le lobby (création de salles, inscription des joueurs, autorisations). Dès que la partie démarre, les clients s'échangent propositions, feedbacks et victoire **directement entre eux via des connexions TCP P2P** — le serveur n'intervient plus. Cette séparation nette lobby/jeu est rendue possible par le **protocole GG**, un protocole applicatif textuel conçu intégralement pour ce projet.
+
+**Déroulement :** un joueur choisit une combinaison secrète de **4 couleurs** (parmi Rouge, Vert, Bleu, Jaune, Orange — répétitions permises). Les autres joueurs tentent de la deviner. Après chaque proposition, le détenteur du secret répond avec :
 
 - Le nombre de **couleurs correctes** (bonne couleur, mauvaise position)
 - Le nombre de **positions correctes** (bonne couleur, bonne position)
 
-Le premier joueur à deviner la combinaison exacte **gagne la partie**.
+Le premier joueur à deviner la combinaison exacte **gagne la manche**. Les manches s'enchaînent avec rotation du détenteur du secret.
 
-Le jeu repose sur une **architecture hybride client–serveur et pair-à-pair** :
-- Le **serveur** gère le lobby (salles, joueurs, sessions).
-- Une fois la partie lancée, les clients communiquent **directement entre eux (P2P)** via TCP.
-- Les joueurs peuvent également jouer **contre le serveur** en mode solo.
+**Modes de jeu :**
+- **Multijoueur P2P** — jusqu'à N joueurs dans une salle, jeu entièrement décentralisé pendant la partie.
+- **Solo contre le serveur** (`PLAY_SERVER`) — le serveur génère un secret et répond aux `GUESS` directement ; même flux de messages que le mode P2P, même logique côté client.
+
+**Tolérance aux pannes :** toute déconnexion en cours de partie est détectée via `IOException` ; la session est annulée proprement et les joueurs retournent au lobby sans blocage.
 
 ---
 
 ## Architecture
+
+**Principe clé : le serveur est un hub de coordination, pas un relais de jeu.**
+
+Pendant le lobby, tous les messages transitent par le serveur (TCP). Dès que `GAME_STARTED` est envoyé, chaque client ouvre des connexions TCP directes avec ses pairs. Le serveur n'est plus impliqué dans le déroulement de la partie.
 
 ```
 ┌──────────────┐        TCP (Protocole GG)        ┌──────────────────────┐
@@ -112,6 +119,8 @@ guess-game/
 ---
 
 ## Référence du protocole GG
+
+Le **protocole GG** est un protocole applicatif textuel conçu intégralement pour ce projet, transporté sur TCP. Il n'utilise aucune bibliothèque externe. Chaque message est une ligne de texte délimitée par `|`, parsée et validée par `MessageParser`. Une `ParseException` est levée pour tout message malformé.
 
 Tous les messages respectent le format suivant :
 
@@ -301,9 +310,10 @@ La classe `Logger` centralise ce comportement et est utilisée par le client com
 
 | Fonctionnalité | État | Notes |
 |----------------|------|-------|
-| Tests unitaires structurés | ✅ | `GameLogic` et `MessageParser` testés indépendamment |
-| Tolérance aux pannes | ✅ | Déconnexion gérée via `IOException` ; partie annulée proprement |
-| Chiffrement TLS | 🔄 Prévu | Encapsulation `SSLSocket` dans `SecurityManager` en remplacement du `Socket` classique |
+| Tests unitaires structurés | ✅ | `GameEngine` et `MessageParser` testés indépendamment |
+| Tolérance aux pannes | ✅ | Déconnexion détectée via `IOException` ; session annulée proprement, joueurs retournés au lobby sans blocage |
+| Mode solo contre le serveur | ✅ | `PLAY_SERVER` : le serveur génère le secret et répond aux `GUESS` — même flux de messages que le P2P, aucune logique client spécifique requise |
+| Chiffrement TLS + HMAC | 🔄 Prévu | `SecurityManager` : encapsulation `SSLSocket`, signature HMAC des messages, rate limiting par joueur, sanitisation des entrées |
 
 ---
 
